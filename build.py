@@ -6,29 +6,24 @@ from pathlib import Path
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
 
-def build_js_bundle(js_src_dir: Path, pkg_dir: Path) -> None:
-    """Build the JavaScript bundle.
+def get_version_from_git_tag() -> str:
+    """Extract version from the latest git tag.
 
-    Args:
-        js_src_dir: Directory containing JavaScript source files
-        pkg_dir: Directory where the bundle should be placed
-
-    Raises:
-        subprocess.CalledProcessError: If npm build fails
-        RuntimeError: If bundle is not created in correct location
+    Returns:
+        str: Version string from git tag, or "0.0.0" if not available
     """
-    # Ensure node_modules exists
-    if not (js_src_dir / "node_modules").exists():
-        subprocess.run(["npm", "ci"], cwd=js_src_dir, check=True)
+    try:
+        # Get the latest tag that starts with 'v'
+        tag = subprocess.check_output(
+            ["git", "describe", "--tags", "--abbrev=0"],
+            text=True,
+            stderr=subprocess.DEVNULL,  # Suppress stderr
+        ).strip()
 
-    # Build the bundle
-    subprocess.run(["npm", "run", "build"], cwd=js_src_dir, check=True)
-
-    # Verify bundle exists in correct location
-    bundle_path = pkg_dir / "salvajson.js"
-    if not bundle_path.exists():
-        msg = f"JS bundle not found at expected location: {bundle_path}"
-        raise RuntimeError(msg)
+        # Remove the 'v' prefix if present and return
+        return tag[1:] if tag.startswith("v") else tag
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return "0.0.0"
 
 
 class CustomBuildHook(BuildHookInterface):
@@ -53,6 +48,35 @@ class CustomBuildHook(BuildHookInterface):
 
         # Build JS bundle
         build_js_bundle(js_src_dir, pkg_dir)
+
+    def get_version(self) -> str:
+        """Override version extraction to use git tags."""
+        return get_version_from_git_tag()
+
+
+def build_js_bundle(js_src_dir: Path, pkg_dir: Path) -> None:
+    """Build the JavaScript bundle.
+
+    Args:
+        js_src_dir: Directory containing JavaScript source files
+        pkg_dir: Directory where the bundle should be placed
+
+    Raises:
+        subprocess.CalledProcessError: If npm build fails
+        RuntimeError: If bundle is not created in correct location
+    """
+    # Ensure node_modules exists
+    if not (js_src_dir / "node_modules").exists():
+        subprocess.run(["npm", "ci"], cwd=js_src_dir, check=True)
+
+    # Build the bundle
+    subprocess.run(["npm", "run", "build"], cwd=js_src_dir, check=True)
+
+    # Verify bundle exists in correct location
+    bundle_path = pkg_dir / "salvajson.js"
+    if not bundle_path.exists():
+        msg = f"JS bundle not found at expected location: {bundle_path}"
+        raise RuntimeError(msg)
 
 
 if __name__ == "__main__":
