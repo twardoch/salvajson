@@ -35,6 +35,57 @@ fixed_json = salvaj(corrupted_json)
 print(fixed_json)
 ```
 
+The package provides three main functions:
+
+#### `salvaj(json_str: str) -> str`
+
+Fixes corrupted JSON strings using the lenient jsonic parser. This is the core function that handles:
+- Missing or single quotes
+- Trailing commas
+- Missing commas
+- Unquoted property names
+- JSON comments
+- And more syntax issues
+
+#### `dumps(obj, *, indent=None, sort_keys=False, **kw) -> str`
+
+High-performance JSON serialization using orjson:
+- Faster than the standard json.dumps()
+- Compatible with json.dumps() parameters
+- Supports pretty-printing with indent=2
+- Optional key sorting with sort_keys=True
+- Handles numpy arrays and UTC datetimes
+- Non-string dictionary keys are converted to strings
+
+```python
+from salvajson import dumps
+
+data = {"b": 2, "a": 1}
+# Pretty-printed with sorted keys
+print(dumps(data, indent=2, sort_keys=True))
+```
+
+#### `loads(s: bytes | str, **kw) -> Any`
+
+High-performance JSON parsing with automatic corruption recovery:
+- Uses orjson for fast parsing
+- Falls back to jsonic (salvaj) if standard parsing fails
+- Compatible with json.loads() parameters
+- Accepts both string and bytes input
+- Returns Python objects (dict, list, str, int, float, None)
+
+```python
+from salvajson import loads
+
+# Standard JSON parsing
+valid_json = '{"name": "John", "age": 30}'
+data = loads(valid_json)
+
+# Automatic recovery of corrupted JSON
+corrupted_json = '{name: John, age: 30}'
+data = loads(corrupted_json)  # Still works!
+```
+
 ### Command Line Interface
 
 Salvajson comes with a CLI for processing JSON files directly:
@@ -112,8 +163,22 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Credits
 
+- **Adam Twardoch** [@twardoch](https://github.com/twardoch)
+- **Anthropic Claude**
 - [jsonic](https://github.com/rjrodger/jsonic) - The lenient JSON parser in JavaScript
 - [PythonMonkey](https://github.com/Distributive-Network/PythonMonkey) - Python-JavaScript bridge
+
+## Rationale
+
+This project serves as an exercise demonstrating how to effectively bridge Python and JavaScript ecosystems. It showcases:
+
+- Integration of mature JavaScript libraries into Python applications using PythonMonkey
+- Clean architecture for JavaScript-Python interoperability
+- Proper packaging of JavaScript dependencies within a Python package
+- Modern build system configuration using hatchling and esbuild
+- Automated workflows for dependency management and publishing
+
+While the project solves a specific problem (fixing malformed JSON), its architecture and build setup can be adapted for integrating other JavaScript libraries into Python projects.
 
 ## About the `jsonic` lenient JSON parser
 
