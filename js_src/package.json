@@ -1,5 +1,13 @@
 {
+  "name": "salvajson-js",
+  "private": true,
+  "scripts": {
+    "build": "node build.esbuild.js"
+  },
   "dependencies": {
     "jsonic": "^2.16.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.0"
   }
 }
