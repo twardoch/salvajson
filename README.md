@@ -22,7 +22,7 @@ uv pip install --system salvajson
 ### Python API
 
 ```python
-from salvajson import salvage
+from salvajson import salvaj
 
 # Fix a corrupted JSON string
 corrupted_json = """{
@@ -31,7 +31,7 @@ corrupted_json = """{
     'hobbies': ['reading' 'coding'],
 }"""
 
-fixed_json = salvage(corrupted_json)
+fixed_json = salvaj(corrupted_json)
 print(fixed_json)
 ```
 
@@ -96,7 +96,7 @@ pip install -e .
 
 ## How It Works
 
-Salvajson uses PythonMonkey to create a bridge between Python and JavaScript, allowing it to leverage the powerful jsonic parser. When you pass a JSON string to `salvage()`:
+Salvajson uses PythonMonkey to create a bridge between Python and JavaScript, allowing it to leverage the powerful jsonic parser. When you pass a JSON string to `salvaj()`:
 
 1. The string is passed to the JavaScript runtime
 2. jsonic attempts to parse and fix the JSON

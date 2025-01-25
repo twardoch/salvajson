@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fire import Fire  # type: ignore
 
-from . import salvage
+from . import salvaj
 
 
 def cli(path: str | Path) -> str:
@@ -16,7 +16,7 @@ def cli(path: str | Path) -> str:
     Returns:
         Fixed JSON string that can be parsed by standard JSON parsers
     """
-    return salvage(Path(path).read_text())
+    return salvaj(Path(path).read_text())
 
 
 if __name__ == "__main__":

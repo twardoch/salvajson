@@ -49,7 +49,7 @@ jobs:
           name: python-distribution-files
           path: dist/
           retention-days: 5
-          fail-on-empty: true  # Fail early if dist/ is empty
+          if-no-files-found: error  # Fail if dist/ is empty
 
   test:
     needs: prepare
@@ -70,7 +70,7 @@ jobs:
         with:
           name: python-distribution-files
           path: dist/
-          fail-on-empty: true
+          if-no-files-found: error
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip --verbose
@@ -100,7 +100,7 @@ jobs:
         with:
           name: python-distribution-files
           path: dist/
-          fail-on-empty: true
+          if-no-files-found: error
       - name: Check dist contents
         run: |
           ls -la dist/

@@ -9,7 +9,7 @@ _SALVAJSON_DIR: Final[Path] = Path(__file__).parent.absolute()
 _salvajson_js = require(str(_SALVAJSON_DIR / "salvajson.js"))
 
 
-def salvage(json_str: str) -> str:
+def salvaj(json_str: str) -> str:
     """Re-parse potentially corrupted JSON string using jsonic.
 
     Args:

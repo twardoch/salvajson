@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from salvajson import __version__, salvage
+from salvajson import __version__, salvaj
 from salvajson.__main__ import cli
 
 # Test data
@@ -41,25 +41,25 @@ ERROR_CASES = [
 
 
 @pytest.mark.parametrize("corrupted,expected", CORRUPTED_CASES)
-def test_salvage_corrupted_json(corrupted: str, expected: str):
+def test_salvaj_corrupted_json(corrupted: str, expected: str):
     """Test salvaging various forms of corrupted JSON."""
-    result = salvage(corrupted)
+    result = salvaj(corrupted)
     # Verify the result can be parsed as valid JSON
     parsed = json.loads(result)
     expected_parsed = json.loads(expected)
     assert parsed == expected_parsed
 
 
-def test_salvage_valid_json():
+def test_salvaj_valid_json():
     """Test that valid JSON passes through unchanged."""
-    result = salvage(VALID_JSON)
+    result = salvaj(VALID_JSON)
     assert json.loads(result) == json.loads(VALID_JSON)
 
 
 @pytest.mark.parametrize("invalid_json", ERROR_CASES)
-def test_salvage_error_cases(invalid_json: str):
+def test_salvaj_error_cases(invalid_json: str):
     """Test that appropriate errors are raised for invalid JSON."""
-    result = salvage(invalid_json)
+    result = salvaj(invalid_json)
     with pytest.raises(json.JSONDecodeError):
         json.loads(result)
 
