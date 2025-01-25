@@ -25,7 +25,12 @@ jobs:
         with:
           node-version: '20'
 
-      # If you wish to build Node-based artifacts or do other Node tasks, you can add them here.
+      # Install Node dependencies and build JS bundle
+      - name: Build JS bundle
+        run: |
+          cd js_src
+          npm ci
+          npm run build
 
       - name: Cache pip
         uses: actions/cache@v3
@@ -39,8 +44,22 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install build twine hatchling
 
+      # Verify dist directory is empty/doesn't exist
+      - name: Clean dist
+        run: |
+          rm -rf dist/
+          mkdir dist/
+
+      # Build both wheel and sdist
       - name: Build package
         run: python -m build
+
+      # Verify the dist directory contains files before uploading
+      - name: Verify dist contents
+        run: |
+          ls -la dist/
+          test -n "$(find dist -name '*.whl')" || exit 1
+          test -n "$(find dist -name '*.tar.gz')" || exit 1
 
       - name: Publish to PyPI
         env:
