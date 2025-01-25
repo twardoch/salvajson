@@ -1,0 +1,9 @@
+exclude: '^docs/conf.py'
+repos:
+  - repo: local
+    hooks:
+      - id: placeholder
+        name: placeholder
+        entry: echo "No hooks configured yet"
+        language: system
+        pass_filenames: false
