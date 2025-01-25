@@ -3,66 +3,63 @@ name: Publish to PyPI
 on:
   push:
     tags:
-      - 'v*'  # Trigger on version tags, e.g. v1.0.0
+      - 'v*'  # Trigger on version tags
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
+    
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+      
+      - name: Run tests
+        run: pytest
+
   publish:
-    # Cancel any in-progress runs if a new one is triggered on a tag
-    concurrency: publish-package
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch all tags and history for proper versioning
-
+          fetch-depth: 0  # Fetch all tags for versioning
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-
+          python-version: "3.11"
+      
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: 'js_src/package.json'
-
-      # Install Node dependencies and build JS bundle
-      - name: Build JS bundle
-        working-directory: js_src
-        run: |
-          npm ci
-          npm run build
-
-      - name: Cache pip
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: ${{ runner.os }}-pip-
-
-      - name: Install build dependencies
+      
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install build twine hatchling
-
-      # Verify dist directory is empty/doesn't exist
-      - name: Clean dist
-        run: |
-          rm -rf dist/
-          mkdir dist/
-
-      # Build both wheel and sdist
+          pip install build twine
+          cd js_src && npm ci
+      
       - name: Build package
         run: python -m build
-
-      # Verify the dist directory contains files before uploading
-      - name: Verify dist contents
+      
+      - name: Check dist contents
         run: |
           ls -la dist/
           test -n "$(find dist -name '*.whl')" || exit 1
           test -n "$(find dist -name '*.tar.gz')" || exit 1
-
+      
       - name: Publish to PyPI
         env:
           TWINE_USERNAME: __token__

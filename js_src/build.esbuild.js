@@ -2,7 +2,7 @@ const esbuild = require('esbuild');
 
 esbuild.build({
     entryPoints: ['./salvajson.src.js'], // Entry file
-    outfile: '../salvajson/salvajson.js', // Output file in the Python package
+    outfile: '../src/salvajson/salvajson.js', // Updated output path
     bundle: true,
     platform: 'node',
     format: 'cjs',

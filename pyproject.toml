@@ -1,26 +1,44 @@
 [build-system]
-requires = ["hatchling>=1.18.0"]
+requires = ["hatchling>=1.18.0", "build>=1.0.0"]
 build-backend = "hatchling.build"
 
 [project]
 name = "salvajson"
-dynamic = ["version"]  # Use dynamic versioning
+dynamic = ["version"]
 description = "A Python package for parsing corrupted JSON files using jsonic"
 readme = "README.md"
 requires-python = ">=3.8"
 license = "Apache-2.0"
 dependencies = [
-    "pythonmonkey>=0.5.0"
+    "pythonmonkey>=1.1.0",
+    "fire>=0.7.0"
+]
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
-[project.optional-dependencies]
-test = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-]
+[tool.hatch.version]
+path = "src/salvajson/__init__.py"
+pattern = "__version__ = \"(?P<version>[^\"]+)\""
+
+[tool.hatch.build.hooks.custom]
+path = "build.py"
+dependencies = ["hatchling"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/salvajson"]
+artifacts = ["src/salvajson/salvajson.js"]
 
 [tool.hatch.build]
 include = [
@@ -37,9 +55,33 @@ include = [
     "pyproject.toml"
 ]
 
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+dev = [
+    "build>=1.0.0",
+    "hatchling>=1.18.0",
+    "twine>=4.0.0",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+addopts = "-v --cov=src --cov-report=term-missing --cov-fail-under=80"
 
-[tool.hatch.version]
-path = "build.py"
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*", "setup.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "pass",
+    "raise ImportError",
+]

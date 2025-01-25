@@ -2,43 +2,76 @@
 
 import subprocess
 from pathlib import Path
+from typing import Optional
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
+
+VERSION = "0.1.0"  # Default version if git tag not available
 
 
 def get_version_from_git_tag() -> str:
     """Extract version from the latest git tag.
 
     Returns:
-        str: Version string, or '0.0.0' if no tag is found
+        str: Version string from git tag, or default VERSION if not available
     """
     try:
         # Get the latest tag that starts with 'v'
         tag = subprocess.check_output(
-            ["git", "describe", "--tags", "--abbrev=0"], text=True
+            ["git", "describe", "--tags", "--abbrev=0"],
+            text=True,
+            stderr=subprocess.DEVNULL,  # Suppress stderr
         ).strip()
 
         # Remove the 'v' prefix if present
         return tag[1:] if tag.startswith("v") else tag
-    except subprocess.CalledProcessError:
-        # Fallback to a default version if no tag is found
-        return "0.0.0"
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # Return default version if git command fails or git not available
+        return VERSION
+
+
+def build_js_bundle(js_src_dir: Path, pkg_dir: Path) -> None:
+    """Build the JavaScript bundle.
+
+    Args:
+        js_src_dir: Directory containing JavaScript source files
+        pkg_dir: Directory where the bundle should be placed
+
+    Raises:
+        subprocess.CalledProcessError: If npm build fails
+        RuntimeError: If bundle is not created in correct location
+    """
+    # Ensure node_modules exists
+    if not (js_src_dir / "node_modules").exists():
+        subprocess.run(["npm", "ci"], cwd=js_src_dir, check=True)
+
+    # Build the bundle
+    subprocess.run(["npm", "run", "build"], cwd=js_src_dir, check=True)
+
+    # Verify bundle exists in correct location
+    bundle_path = pkg_dir / "salvajson.js"
+    if not bundle_path.exists():
+        raise RuntimeError(f"JS bundle not found at expected location: {bundle_path}")
+
+    # Clean up any bundle in wrong location
+    wrong_bundle = js_src_dir.parent / "salvajson" / "salvajson.js"
+    if wrong_bundle.exists():
+        wrong_bundle.unlink()
+        if wrong_bundle.parent.exists() and not any(wrong_bundle.parent.iterdir()):
+            wrong_bundle.parent.rmdir()
 
 
 class CustomBuildHook(BuildHookInterface):
-    """Build hook to compile JS assets and set version during package build."""
+    """Custom build hook for hatchling."""
 
-    def initialize(self, version, build_data):
-        """Run during the initialization phase of the build.
+    def initialize(self, version: str, build_data: dict) -> None:
+        """Initialize the build process.
 
         Args:
             version: The version of the build
             build_data: Build configuration data
         """
-        # Only build JS during sdist builds
-        if not self.target_name == "sdist":
-            return
-
+        # Build JS for both sdist and wheel
         root_dir = Path(__file__).parent
         js_src_dir = root_dir / "js_src"
         pkg_dir = root_dir / "src" / "salvajson"
@@ -46,13 +79,24 @@ class CustomBuildHook(BuildHookInterface):
         # Create package directory if it doesn't exist
         pkg_dir.mkdir(parents=True, exist_ok=True)
 
-        # Install npm dependencies
-        subprocess.run(["npm", "install"], cwd=js_src_dir, check=True)
+        # Build JS bundle
+        build_js_bundle(js_src_dir, pkg_dir)
 
-        # Build the JS bundle
-        cmd = ["node", "build.esbuild.js"]
-        subprocess.run(cmd, cwd=js_src_dir, check=True)
-
-    def get_version(self):
-        """Override version extraction to use git tags."""
+    def get_version(self) -> str:
+        """Override version extraction to use git tags or default version."""
         return get_version_from_git_tag()
+
+
+if __name__ == "__main__":
+    # For manual builds
+    root_dir = Path(__file__).parent
+    js_src_dir = root_dir / "js_src"
+    pkg_dir = root_dir / "src" / "salvajson"
+
+    # Ensure package directory exists
+    pkg_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build JS bundle
+    build_js_bundle(js_src_dir, pkg_dir)
+
+    print("JavaScript bundle built successfully!")

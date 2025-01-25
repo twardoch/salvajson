@@ -1,6 +1,6 @@
 # Salvajson
 
-A Python package for parsing and fixing corrupted JSON files using the powerful [jsonic](https://github.com/rjrodger/jsonic) parser. Salvajson provides a bridge between Python and the JavaScript jsonic library through PythonMonkey.
+A Python package for parsing and fixing corrupted JSON files using the powerful [jsonic](https://github.com/rjrodger/jsonic) parser. Salvajson provides a bridge between Python and JavaScript through PythonMonkey.
 
 ## Features
 
@@ -44,7 +44,11 @@ print(fixed_json)
 Salvajson comes with a CLI for processing JSON files directly:
 
 ```bash
+# Process a single file
 python -m salvajson path/to/corrupted.json
+
+# Process and save to a new file
+python -m salvajson input.json > output.json
 ```
 
 ## Common JSON Issues Salvajson Can Fix
@@ -54,7 +58,19 @@ python -m salvajson path/to/corrupted.json
 - Trailing commas
 - Missing commas between elements
 - Unquoted string values
+- Comments in JSON
 - And more...
+
+## Error Handling
+
+Salvajson provides clear error messages when it encounters JSON that cannot be salvaged:
+
+```python
+try:
+    salvage('{"incomplete": }')
+except Exception as e:
+    print(f"Error: {e}")
+```
 
 ## Development
 
@@ -113,7 +129,7 @@ Salvajson uses PythonMonkey to create a bridge between Python and JavaScript, al
 
 ## License
 
-MIT License - see LICENSE file for details.
+Apache License 2.0 - see LICENSE file for details.
 
 ## Contributing
 
@@ -174,3 +190,11 @@ This project uses semantic versioning. To create a new release:
    ```bash
    git push origin v0.1.1
    ```
+
+## Changelog
+
+### 0.1.0 (YYYY-MM-DD)
+- Initial release
+- Basic JSON salvaging functionality
+- Command-line interface
+- Python API
