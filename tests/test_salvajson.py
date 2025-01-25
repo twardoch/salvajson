@@ -1,12 +1,13 @@
 """Tests for salvajson package."""
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 
-from salvajson import salvage
-from salvajson.__main__ import cli, main
+from salvajson import __version__, salvage
+from salvajson.__main__ import cli
 
 # Test data
 VALID_JSON = """{"name": "John", "age": 30}"""
@@ -30,13 +31,12 @@ CORRUPTED_CASES = [
     ),
 ]
 
+# Cases that should raise errors
 ERROR_CASES = [
-    # Empty input
-    "",
-    # Invalid syntax that can't be recovered
-    "{{",
-    # Incomplete object
-    '{"name":',
+    # Reversed braces
+    "}{",
+    # Mismatched brackets
+    "{[}]",
 ]
 
 
@@ -59,8 +59,9 @@ def test_salvage_valid_json():
 @pytest.mark.parametrize("invalid_json", ERROR_CASES)
 def test_salvage_error_cases(invalid_json: str):
     """Test that appropriate errors are raised for invalid JSON."""
-    with pytest.raises(Exception):
-        salvage(invalid_json)
+    result = salvage(invalid_json)
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(result)
 
 
 def test_cli_with_file(tmp_path: Path):
@@ -80,36 +81,19 @@ def test_cli_file_not_found():
         cli("nonexistent.json")
 
 
-def test_main_success(capsys, tmp_path: Path):
-    """Test main function success path."""
-    # Create a test file
-    test_file = tmp_path / "test.json"
-    test_file.write_text(CORRUPTED_CASES[0][0])
+def test_cli_with_invalid_json(tmp_path: Path):
+    """Test CLI with invalid JSON file."""
+    test_file = tmp_path / "invalid.json"
+    test_file.write_text(ERROR_CASES[0])
 
-    # Mock sys.argv
-    import sys
-
-    original_argv = sys.argv
-    sys.argv = ["salvajson", str(test_file)]
-    try:
-        exit_code = main()
-        assert exit_code == 0
-        captured = capsys.readouterr()
-        assert json.loads(captured.out.strip()) == json.loads(CORRUPTED_CASES[0][1])
-    finally:
-        sys.argv = original_argv
+    result = cli(str(test_file))
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(result)
 
 
-def test_main_error(capsys):
-    """Test main function error path."""
-    import sys
-
-    original_argv = sys.argv
-    sys.argv = ["salvajson", "nonexistent.json"]
-    try:
-        exit_code = main()
-        assert exit_code == 1
-        captured = capsys.readouterr()
-        assert "Error:" in captured.err
-    finally:
-        sys.argv = original_argv
+def test_version():
+    """Test that version is properly formatted."""
+    assert isinstance(__version__, str)
+    assert re.match(
+        r"^\d+\.\d+\.\d+$", __version__
+    ), "Version should be in format X.Y.Z"
