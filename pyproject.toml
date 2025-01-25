@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.18.0", "build>=1.0.0"]
+requires = ["hatchling>=1.18.0", "python-semantic-release>=8.7.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -27,23 +27,15 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
-[tool.hatch.version]
-path = "src/salvajson/__init__.py"
-pattern = "__version__ = \"(?P<version>[^\"]+)\""
+[tool.hatch.metadata]
+allow-direct-references = true
 
-[tool.hatch.build.hooks.custom]
+[tool.hatch.version]
 path = "build.py"
-dependencies = ["hatchling"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/salvajson"]
 artifacts = ["src/salvajson/salvajson.js"]
-
-[tool.hatch.build]
-include = [
-    "src/salvajson/*.py",
-    "src/salvajson/salvajson.js"
-]
 
 [tool.hatch.build.targets.sdist]
 include = [
@@ -54,6 +46,9 @@ include = [
     "pyproject.toml"
 ]
 
+[tool.hatch.build.hooks.custom]
+path = "build.py"
+
 [project.optional-dependencies]
 test = [
     "pytest>=7.0.0",
@@ -63,6 +58,7 @@ dev = [
     "build>=1.0.0",
     "hatchling>=1.18.0",
     "twine>=4.0.0",
+    "python-semantic-release>=8.7.0",
 ]
 
 [tool.pytest.ini_options]
@@ -84,3 +80,15 @@ exclude_lines = [
     "pass",
     "raise ImportError",
 ]
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+version_source = "tag"
+major_on_zero = false
+tag_format = "v{version}"
+commit_parser = "angular"
+build_command = "python -m build"
+dist_path = "dist/"
+upload_to_pypi = true
+upload_to_release = true
+branch = "main"

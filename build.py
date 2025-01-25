@@ -2,7 +2,6 @@
 
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
@@ -53,13 +52,6 @@ def build_js_bundle(js_src_dir: Path, pkg_dir: Path) -> None:
     if not bundle_path.exists():
         raise RuntimeError(f"JS bundle not found at expected location: {bundle_path}")
 
-    # Clean up any bundle in wrong location
-    wrong_bundle = js_src_dir.parent / "salvajson" / "salvajson.js"
-    if wrong_bundle.exists():
-        wrong_bundle.unlink()
-        if wrong_bundle.parent.exists() and not any(wrong_bundle.parent.iterdir()):
-            wrong_bundle.parent.rmdir()
-
 
 class CustomBuildHook(BuildHookInterface):
     """Custom build hook for hatchling."""
@@ -71,8 +63,10 @@ class CustomBuildHook(BuildHookInterface):
             version: The version of the build
             build_data: Build configuration data
         """
+        super().initialize(version, build_data)
+
         # Build JS for both sdist and wheel
-        root_dir = Path(__file__).parent
+        root_dir = Path(self.root)
         js_src_dir = root_dir / "js_src"
         pkg_dir = root_dir / "src" / "salvajson"
 
