@@ -26,6 +26,10 @@ def get_version_from_git_tag() -> str:
         return "0.0.0"
 
 
+# This variable is required by Hatch for version detection
+VERSION = get_version_from_git_tag()
+
+
 class CustomBuildHook(BuildHookInterface):
     """Custom build hook for hatchling."""
 
@@ -48,10 +52,6 @@ class CustomBuildHook(BuildHookInterface):
 
         # Build JS bundle
         build_js_bundle(js_src_dir, pkg_dir)
-
-    def get_version(self) -> str:
-        """Override version extraction to use git tags."""
-        return get_version_from_git_tag()
 
 
 def build_js_bundle(js_src_dir: Path, pkg_dir: Path) -> None:

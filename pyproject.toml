@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.18.0", "python-semantic-release>=8.7.0"]
+requires = ["hatchling>=1.18.0", "python-semantic-release>=8.7.0", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
@@ -29,9 +29,12 @@ classifiers = [
 
 [tool.hatch.metadata]
 allow-direct-references = true
+dynamic = ["version"]
+
 
 [tool.hatch.version]
-path = "build.py"
+source = "vcs"
+vcs_opts = { "tag_prefix" = "v" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/salvajson"]
