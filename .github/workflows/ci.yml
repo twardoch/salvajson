@@ -39,7 +39,7 @@ jobs:
           pip install build twine hatch --verbose
           cd js_src && npm ci --verbose
       - name: Build package
-        run: hatch build --verbose
+        run: hatch build
       - name: Record wheel distribution path
         id: wheel-distribution
         run: echo "path=$(ls dist/*.whl)" >> $GITHUB_OUTPUT
@@ -117,5 +117,4 @@ jobs:
             --title="Release $tag" \
             --draft=false \
             --prerelease=false \
-            --verbose \
             ./dist/*
