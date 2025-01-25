@@ -1,15 +1,18 @@
-name: Publish to PyPI
+name: CI/CD
 
 on:
   push:
     tags:
-      - 'v[0-9]*'  # Match tags that resemble a version
+      - 'v[0-9]*'  # Match version tags
+  pull_request:  # Run CI checks on PRs
+  workflow_dispatch:  # Allow manual triggers
 
 permissions:
-  contents: read
+  contents: write  # Needed for creating releases
+  id-token: write  # Needed for PyPI trusted publishing
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.run_id }}  # Use run_id to keep artifacts in the same run
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -25,17 +28,18 @@ jobs:
         id: setup-python
         with:
           python-version: "3.12"
+          cache: pip
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install build twine hatchling
-          cd js_src && npm ci
+          python -m pip install --upgrade pip --verbose
+          pip install build twine hatch --verbose
+          cd js_src && npm ci --verbose
       - name: Build package
-        run: python -m build
+        run: hatch build --verbose
       - name: Record wheel distribution path
         id: wheel-distribution
         run: echo "path=$(ls dist/*.whl)" >> $GITHUB_OUTPUT
@@ -45,7 +49,7 @@ jobs:
           name: python-distribution-files
           path: dist/
           retention-days: 5
-          if-no-files-found: error  # Fail early if dist/ is empty
+          fail-on-empty: true  # Fail early if dist/ is empty
 
   test:
     needs: prepare
@@ -60,34 +64,39 @@ jobs:
         id: setup-python
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
       - name: Retrieve distribution files
         uses: actions/download-artifact@v4
         with:
           name: python-distribution-files
           path: dist/
-          if-no-files-found: error  # Fail if artifact was not actually uploaded
+          fail-on-empty: true
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[test]"
+          python -m pip install --upgrade pip --verbose
+          pip install -e ".[test]" --verbose
       - name: Run tests
         run: pytest -v
 
   publish:
     needs: test
+    if: startsWith(github.ref, 'refs/tags/v')  # Only run on version tags
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    environment:
+      name: pypi
+      url: https://pypi.org/p/salvajson  # Replace with your package name
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
       - name: Retrieve distribution files
         uses: actions/download-artifact@v4
         with:
           name: python-distribution-files
           path: dist/
+          fail-on-empty: true
       - name: Check dist contents
         run: |
           ls -la dist/
@@ -95,7 +104,18 @@ jobs:
           test -n "$(find dist -name '*.tar.gz')" || exit 1
       - name: Publish to PyPI
         env:
-          TWINE_REPOSITORY: pypi
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: python -m twine upload dist/*
+        run: twine upload dist/* --verbose
+      
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          gh release create "$tag" \
+            --title="Release $tag" \
+            --draft=false \
+            --prerelease=false \
+            --verbose \
+            ./dist/*
