@@ -1,10 +1,10 @@
-# Salvajson
+# SalvaJSON
 
 [`salvajson`](https://github.com/twardoch/salvajson) is a Python package for fixing corrupted JSON files using. It uses the lenient [`jsonic`](https://github.com/rjrodger/jsonic) parser and the [`pythonmonkey`](https://github.com/Distributive-Network/PythonMonkey) Python-JS bridge.
 
-## Use cases
-
-- Seamlessly correct an invalid JSON returned by an LLM or other such tool.
+- Seamlessly corrects invalid JSON from LLMs, APIs, and other sources
+- Handles missing/single quotes, trailing commas, missing commas, unquoted strings, JSON comments, and more
+- Simple Python API and command-line interface
 
 ## Installation
 
@@ -45,27 +45,6 @@ python -m salvajson path/to/corrupted.json
 
 # Process and save to a new file
 python -m salvajson input.json > output.json
-```
-
-## Common JSON Issues Salvajson Can Fix
-
-- Missing quotes around property names
-- Single quotes instead of double quotes
-- Trailing commas
-- Missing commas between elements
-- Unquoted string values
-- Comments in JSON
-- And more...
-
-## Error Handling
-
-Salvajson provides clear error messages when it encounters JSON that cannot be salvaged:
-
-```python
-try:
-    salvage('{"incomplete": }')
-except Exception as e:
-    print(f"Error: {e}")
 ```
 
 ## Development
@@ -460,10 +439,3 @@ This project uses semantic versioning. To create a new release:
    git push origin v0.1.1
    ```
 
-## Changelog
-
-### 1.1.0 (2025-01-25)
-- Initial release
-- Basic JSON salvaging functionality
-- Command-line interface
-- Python API
