@@ -153,3 +153,24 @@ Set up these secrets in your GitHub repository:
 ### License
 
 This project is licensed under the Apache License, Version 2.0.
+
+## Versioning
+
+This project uses semantic versioning. To create a new release:
+
+1. Commit your changes
+2. Create a new git tag following semantic versioning principles:
+   ```bash
+   # For a patch release
+   git tag v0.1.1
+
+   # For a minor release
+   git tag v0.2.0
+
+   # For a major release
+   git tag v1.0.0
+   ```
+3. Push the tag to trigger the PyPI publishing workflow:
+   ```bash
+   git push origin v0.1.1
+   ```
