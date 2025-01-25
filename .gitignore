@@ -161,7 +161,3 @@ web_modules/
 wheels/
 yarn-debug.log*
 yarn-error.log*
-# Built JavaScript bundle (only allow in src/salvajson/)
-/salvajson/
-salvajson.js
-!src/salvajson/salvajson.js
