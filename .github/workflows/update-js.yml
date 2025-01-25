@@ -7,21 +7,31 @@ on:
 
 jobs:
   update-js:
+    # Cancel any in-progress runs of this workflow if a new one is triggered
+    concurrency: update-js
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
+      # Cache Node modules to speed up repeated installs
+      - name: Cache Node modules
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          
-      - name: Update and build JS
+
+      - name: Install and build JS
         run: |
           cd js_src
-          npm install
+          npm ci
           npm run build
-          
+
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
         with:
@@ -31,4 +41,4 @@ jobs:
             Automated update of JS dependencies and rebuild of the bundle.
             Please review the changes before merging.
           branch: update-js-deps
-          delete-branch: true 
+          delete-branch: true
