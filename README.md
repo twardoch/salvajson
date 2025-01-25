@@ -123,3 +123,33 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 - [jsonic](https://github.com/rjrodger/jsonic) - The JavaScript library that powers the JSON parsing
 - [PythonMonkey](https://github.com/Distributive-Network/PythonMonkey) - Python-JavaScript bridge
+
+## Notes for Maintainers
+
+### Automated Workflows
+
+The package uses GitHub Actions for automation:
+
+1. **JS Dependencies Update** (weekly + manual trigger)
+   - Updates JS dependencies and rebuilds the bundle
+   - Creates a PR for review
+   - Trigger manually: Go to Actions → "Update JS Dependencies" → "Run workflow"
+
+2. **PyPI Publishing** (on tag)
+   - Builds and publishes to PyPI when a version tag is pushed
+   - To release a new version:
+     ```bash
+     git tag v0.1.1  # Use appropriate version
+     git push origin v0.1.1
+     ```
+   - The workflow will automatically build and publish to PyPI
+
+### Required Secrets
+
+Set up these secrets in your GitHub repository:
+
+- `PYPI_API_TOKEN`: API token from PyPI for publishing
+
+### License
+
+This project is licensed under the Apache License, Version 2.0.
