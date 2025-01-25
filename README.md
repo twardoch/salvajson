@@ -81,9 +81,10 @@ npm install
 
 ```
 salvajson/
-├── salvajson/
-│   ├── __init__.py      # Main package interface
-│   └── salvajson.js     # Bundled JavaScript code
+├── src/
+│   └── salvajson/
+│       ├── __init__.py      # Main package interface
+│       └── salvajson.js     # Bundled JavaScript code
 ├── js_src/
 │   ├── package.json     # JavaScript dependencies
 │   └── index.js         # JavaScript source

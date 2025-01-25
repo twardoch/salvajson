@@ -1,4 +1,4 @@
-"""Build script for json_salvation package."""
+"""Build script for salvajson package."""
 
 import subprocess
 from pathlib import Path
@@ -20,7 +20,12 @@ class CustomBuildHook(BuildHookInterface):
         if not self.target_name == "sdist":
             return
 
-        js_src_dir = Path(__file__).parent / "js_src"
+        root_dir = Path(__file__).parent
+        js_src_dir = root_dir / "js_src"
+        pkg_dir = root_dir / "src" / "salvajson"
+
+        # Create package directory if it doesn't exist
+        pkg_dir.mkdir(parents=True, exist_ok=True)
 
         # Install npm dependencies
         subprocess.run(["npm", "install"], cwd=js_src_dir, check=True)
