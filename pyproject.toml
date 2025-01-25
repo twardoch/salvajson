@@ -84,7 +84,7 @@ exclude_lines = [
 [tool.semantic_release]
 version_variables = ["src/salvajson/_version.py:__version__"]
 version_toml = ["pyproject.toml:project.version"]
-version_source = "tag"
+version_source = "commit"
 major_on_zero = false
 tag_format = "v{version}"
 commit_parser = "angular"
@@ -93,3 +93,20 @@ dist_path = "dist/"
 upload_to_pypi = true
 upload_to_release = true
 branch = "main"
+commit_message = "chore: release {version} [skip ci]"
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = [
+    "build",
+    "chore",
+    "ci",
+    "docs",
+    "feat",
+    "fix",
+    "perf",
+    "style",
+    "refactor",
+    "test"
+]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
