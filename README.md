@@ -18,8 +18,8 @@ pip install salvajson
 
 ### Requirements
 
-- Python 3.8 or higher
-- PythonMonkey 0.5.0 or higher (automatically installed)
+- Python 3.10 or higher
+- PythonMonkey 1.1.0 or higher (automatically installed)
 
 ## Usage
 
