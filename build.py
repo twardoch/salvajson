@@ -5,29 +5,6 @@ from pathlib import Path
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
-VERSION = "0.1.0"  # Default version if git tag not available
-
-
-def get_version_from_git_tag() -> str:
-    """Extract version from the latest git tag.
-
-    Returns:
-        str: Version string from git tag, or default VERSION if not available
-    """
-    try:
-        # Get the latest tag that starts with 'v'
-        tag = subprocess.check_output(
-            ["git", "describe", "--tags", "--abbrev=0"],
-            text=True,
-            stderr=subprocess.DEVNULL,  # Suppress stderr
-        ).strip()
-
-        # Remove the 'v' prefix if present
-        return tag[1:] if tag.startswith("v") else tag
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        # Return default version if git command fails or git not available
-        return VERSION
-
 
 def build_js_bundle(js_src_dir: Path, pkg_dir: Path) -> None:
     """Build the JavaScript bundle.
@@ -50,7 +27,8 @@ def build_js_bundle(js_src_dir: Path, pkg_dir: Path) -> None:
     # Verify bundle exists in correct location
     bundle_path = pkg_dir / "salvajson.js"
     if not bundle_path.exists():
-        raise RuntimeError(f"JS bundle not found at expected location: {bundle_path}")
+        msg = f"JS bundle not found at expected location: {bundle_path}"
+        raise RuntimeError(msg)
 
 
 class CustomBuildHook(BuildHookInterface):
@@ -75,10 +53,6 @@ class CustomBuildHook(BuildHookInterface):
 
         # Build JS bundle
         build_js_bundle(js_src_dir, pkg_dir)
-
-    def get_version(self) -> str:
-        """Override version extraction to use git tags or default version."""
-        return get_version_from_git_tag()
 
 
 if __name__ == "__main__":

@@ -31,7 +31,7 @@ classifiers = [
 allow-direct-references = true
 
 [tool.hatch.version]
-path = "build.py"
+path = "src/salvajson/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/salvajson"]
@@ -82,6 +82,7 @@ exclude_lines = [
 ]
 
 [tool.semantic_release]
+version_variables = ["src/salvajson/_version.py:__version__"]
 version_toml = ["pyproject.toml:project.version"]
 version_source = "tag"
 major_on_zero = false

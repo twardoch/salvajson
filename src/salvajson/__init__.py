@@ -15,8 +15,7 @@ The package also provides a command-line interface:
     $ python -m salvajson input.json
 """
 
-__version__ = "0.1.0"
-
+from ._version import __version__
 from .salvajson import salvage
 
 __all__ = ["salvage", "__version__"]
