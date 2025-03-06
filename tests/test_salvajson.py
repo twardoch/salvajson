@@ -94,6 +94,6 @@ def test_cli_with_invalid_json(tmp_path: Path):
 def test_version():
     """Test that version is properly formatted."""
     assert isinstance(__version__, str)
-    assert re.match(
-        r"^\d+\.\d+\.\d+$", __version__
-    ), "Version should be in format X.Y.Z"
+    assert re.match(r"^\d+\.\d+\.\d+$", __version__), (
+        "Version should be in format X.Y.Z"
+    )

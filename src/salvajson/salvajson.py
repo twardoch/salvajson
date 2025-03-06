@@ -1,7 +1,8 @@
 """Core functionality for salvaging corrupted JSON files using jsonic."""
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Final
+from typing import Final
 
 import orjson
 from pythonmonkey import require  # type: ignore
