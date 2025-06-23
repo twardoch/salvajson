@@ -2,8 +2,8 @@ name: Update JS Dependencies
 
 on:
   schedule:
-    - cron: '0 0 * * 0'  # Run weekly
-  workflow_dispatch:  # Allow manual trigger
+    - cron: "0 0 * * 0" # Run weekly
+  workflow_dispatch: # Allow manual trigger
 
 jobs:
   update-js:
@@ -24,19 +24,21 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
       - name: Install and build JS
         run: |
           cd js_src
           npm ci
+          echo "Running npm audit..."
+          npm audit --audit-level=critical
           npm run build
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
         with:
-          commit-message: 'chore: update JS dependencies and rebuild'
-          title: 'Update JS dependencies'
+          commit-message: "chore: update JS dependencies and rebuild"
+          title: "Update JS dependencies"
           body: |
             Automated update of JS dependencies and rebuild of the bundle.
             Please review the changes before merging.

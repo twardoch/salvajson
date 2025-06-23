@@ -1,9 +1,77 @@
-exclude: '^docs/conf.py'
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+exclude: "^docs/conf.py|.salvajson.js$" # Exclude generated JS bundle
 repos:
-  - repo: local
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
     hooks:
-      - id: placeholder
-        name: placeholder
-        entry: echo "No hooks configured yet"
-        language: system
-        pass_filenames: false
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+        exclude: ^tests/data/test\.json$
+      - id: check-toml
+      - id: check-added-large-files
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.10.0
+    hooks:
+      - id: mypy
+        additional_dependencies: []
+        # pythonmonkey and orjson might not have comprehensive stubs
+        # We'll add specific ignores in pyproject.toml or inline as needed
+        args: [--ignore-missing-imports] # Start with this and refine
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8 # Use a version that supports prettier v3
+    hooks:
+      - id: prettier
+        types_or:
+          [
+            javascript,
+            jsx,
+            ts,
+            tsx,
+            json,
+            css,
+            sass,
+            scss,
+            html,
+            vue,
+            yaml,
+            markdown,
+          ]
+        args: [--write]
+        additional_dependencies:
+          - prettier@3.2.5 # Pin Prettier version
+          - "@prettier/plugin-xml" # If you have XML files
+          # Add other prettier plugins if needed
+        exclude: ^(src/salvajson/salvajson\.js|tests/data/test\.json)$ # Exclude bundled/minified JS and test data
+
+  - repo: https://github.com/pre-commit/mirrors-commitlint
+    rev: v19.3.0 # Check for latest commitlint version
+    hooks:
+      - id: commitlint
+        stages: [commit-msg]
+        additional_dependencies:
+          - "@commitlint/config-conventional@19.2.2"
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.9 # Check for latest bandit version
+    hooks:
+      - id: bandit
+        args: ["-c", "pyproject.toml", "-r"] # -r to recurse, -c for config
+        # `exclude_also` is not a standard bandit pre-commit argument.
+        # Exclusions are typically handled in bandit's config (pyproject.toml)
+        # or by pre-commit's top-level `exclude` or per-hook `exclude`.
+        # For bandit, specific test exclusions are better in its own config.
+        # We can exclude whole test directories via pre-commit `exclude` on the hook if needed.
+        additional_dependencies: ["toml"] # For reading pyproject.toml config

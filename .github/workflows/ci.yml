@@ -3,13 +3,13 @@ name: CI/CD
 on:
   push:
     tags:
-      - 'v[0-9]*'  # Match version tags
-  pull_request:  # Run CI checks on PRs
-  workflow_dispatch:  # Allow manual triggers
+      - "v[0-9]*" # Match version tags
+  pull_request: # Run CI checks on PRs
+  workflow_dispatch: # Allow manual triggers
 
 permissions:
-  contents: write  # Needed for creating releases
-  id-token: write  # Needed for PyPI trusted publishing
+  contents: write # Needed for creating releases
+  id-token: write # Needed for PyPI trusted publishing
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # deep clone for versioning
+          fetch-depth: 0 # deep clone for versioning
       - uses: actions/setup-python@v5
         id: setup-python
         with:
@@ -32,7 +32,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip --verbose
@@ -49,7 +49,7 @@ jobs:
           name: python-distribution-files
           path: dist/
           retention-days: 5
-          if-no-files-found: error  # Fail if dist/ is empty
+          if-no-files-found: error # Fail if dist/ is empty
 
   test:
     needs: prepare
@@ -74,17 +74,19 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip --verbose
-          pip install -e ".[test]" --verbose
+          pip install -e ".[dev,test]" --verbose # Install dev for pre-commit
+      - name: Run pre-commit checks
+        run: pre-commit run --all-files --show-diff-on-failure
       - name: Run tests
         run: pytest -v
 
   publish:
     needs: test
-    if: startsWith(github.ref, 'refs/tags/v')  # Only run on version tags
+    if: startsWith(github.ref, 'refs/tags/v') # Only run on version tags
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/salvajson  # Replace with your package name
+      url: https://pypi.org/p/salvajson # Replace with your package name
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -111,14 +113,18 @@ jobs:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
         run: twine upload dist/* --verbose
-      
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          tag="${GITHUB_REF#refs/tags/}"
-          gh release create "$tag" \
-            --title="Release $tag" \
-            --draft=false \
-            --prerelease=false \
-            ./dist/*
+
+      # The GitHub Release (including notes and assets) is now created by python-semantic-release
+      # when it generates the tag that triggers this publish workflow.
+      # The `upload_to_release = true` and default asset handling in PSR's config
+      # should cover uploading artifacts from `dist/` (built by PSR's `build_command`).
+      # - name: Create GitHub Release
+      #   env:
+      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #   run: |
+      #     tag="${GITHUB_REF#refs/tags/}"
+      #     gh release create "$tag" \
+      #       --title="Release $tag" \
+      #       --draft=false \
+      #       --prerelease=false \
+      #       ./dist/*

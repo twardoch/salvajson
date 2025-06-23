@@ -4,11 +4,11 @@ import json
 import re
 from pathlib import Path
 
+import orjson  # For testing loads fallback
 import pytest
-import orjson # For testing loads fallback
-from pythonmonkey import SpiderMonkeyError # Import the specific error
+from pythonmonkey import SpiderMonkeyError  # Import the specific error
 
-from salvajson import __version__, salvaj, dumps, loads # Import dumps and loads
+from salvajson import __version__, dumps, loads, salvaj  # Import dumps and loads
 from salvajson.__main__ import cli
 
 # Test data
@@ -42,7 +42,7 @@ ERROR_CASES = [
 ]
 
 
-@pytest.mark.parametrize("corrupted,expected", CORRUPTED_CASES)
+@pytest.mark.parametrize("corrupted,expected", CORRUPTED_CASES)  # noqa: PT006
 def test_salvaj_corrupted_json(corrupted: str, expected: str):
     """Test salvaging various forms of corrupted JSON."""
     result = salvaj(corrupted)
@@ -107,9 +107,10 @@ def test_cli_with_invalid_json(tmp_path: Path):
 def test_version():
     """Test that version is properly formatted."""
     assert isinstance(__version__, str)
-    assert re.match(r"^\d+\.\d+\.\d+$", __version__), (
-        "Version should be in format X.Y.Z"
-    )
+    assert re.match(
+        r"^\d+\.\d+\.\d+$",
+        __version__,
+    ), "Version should be in format X.Y.Z"
 
 
 # Tests for salvajson.dumps
@@ -119,6 +120,7 @@ def test_dumps_basic():
     expected_json = """{"name":"Alice","age":30}"""
     assert json.loads(dumps(data)) == json.loads(expected_json)
 
+
 def test_dumps_with_indent():
     """Test dumps with indentation."""
     data = {"name": "Bob", "age": 25}
@@ -126,21 +128,38 @@ def test_dumps_with_indent():
     expected_json = """{\n  "name": "Bob",\n  "age": 25\n}"""
     assert dumps(data, indent=2) == expected_json
 
+
 def test_dumps_with_sort_keys():
     """Test dumps with sorted keys."""
     data = {"b": 1, "a": 2, "c": {"z": 0, "x": 1}}
     # Note: orjson sorts keys at all levels
     expected_json_sorted = """{"a":2,"b":1,"c":{"x":1,"z":0}}"""
-    # With indent to make it easier to visually compare if needed, and also test together
-    expected_json_sorted_indented = """{\n  "a": 2,\n  "b": 1,\n  "c": {\n    "x": 1,\n    "z": 0\n  }\n}"""
+    # With indent for visual comparison and combined testing
+    expected_json_sorted_indented = (
+        """{\n  "a": 2,\n  "b": 1,\n  "c": {\n    "x": 1,\n    "z": 0\n  }\n}"""
+    )
     assert json.loads(dumps(data, sort_keys=True)) == json.loads(expected_json_sorted)
     assert dumps(data, sort_keys=True, indent=2) == expected_json_sorted_indented
+
 
 def test_dumps_compatibility_params():
     """Test that dumps ignores unhandled standard json.dumps params."""
     data = {"key": "value"}
     # These params are listed as ignored in the docstring
-    assert dumps(data, skipkeys=True, ensure_ascii=False, check_circular=False, allow_nan=False, cls=None, separators=(',',':'), default=None) == """{"key":"value"}"""
+    assert (
+        dumps(
+            data,
+            skipkeys=True,
+            ensure_ascii=False,
+            check_circular=False,
+            allow_nan=False,
+            cls=None,
+            separators=(",", ":"),
+            default=None,
+        )
+        == """{"key":"value"}"""
+    )
+
 
 # Placeholder for numpy/datetime tests if numpy/datetime objects are easily available
 # import numpy as np
@@ -162,15 +181,41 @@ def test_dumps_compatibility_params():
 #     pass
 
 
+def test_package_version():
+    """Test that the package version is available and correctly formatted."""
+    assert isinstance(__version__, str)
+    # Basic semver check (X.Y.Z)
+    # This regex also allows for dev versions like 0.1.dev2+gc06f597
+    version_pattern = r"^\d+\.\d+\.\d+(?:\.dev\d+\+g[a-f0-9]+)?$"
+    assert re.match(version_pattern, __version__), (
+        f"Version {__version__} does not match semantic versioning pattern."
+    )
+
+    # Check consistency with importlib.metadata
+    # This might fail if the package is not installed in editable mode
+    # or if hatch-vcs hasn't built the metadata yet.
+    # It's more of an integration check for the build/install process.
+    try:
+        import importlib.metadata
+        installed_version = importlib.metadata.version("salvajson")
+        assert __version__ == installed_version
+    except importlib.metadata.PackageNotFoundError:
+        # This is acceptable if running tests directly from source without installation
+        # or if `_version.py` fallback is active.
+        # In a CI environment after install, this should ideally not be hit.
+        pass # Or print a warning: warnings.warn("salvajson not installed, skipping metadata version check")
+
+
 # Tests for salvajson.loads
 def test_loads_valid_json():
     """Test loads with valid JSON string and bytes."""
     valid_json_str = """{"name": "Charlie", "score": 100}"""
-    valid_json_bytes = valid_json_str.encode('utf-8')
+    valid_json_bytes = valid_json_str.encode("utf-8")
     expected_data = {"name": "Charlie", "score": 100}
 
     assert loads(valid_json_str) == expected_data
     assert loads(valid_json_bytes) == expected_data
+
 
 def test_loads_corrupted_json_fallback():
     """Test loads fallback mechanism for corrupted JSON."""
@@ -187,14 +232,14 @@ def test_loads_corrupted_json_fallback():
     assert loads(corrupted_json_str) == expected_data_after_salvaj
 
     # Test with bytes input as well
-    corrupted_json_bytes = corrupted_json_str.encode('utf-8')
+    corrupted_json_bytes = corrupted_json_str.encode("utf-8")
     assert loads(corrupted_json_bytes) == expected_data_after_salvaj
 
 
 def test_loads_error_case_after_fallback():
     """Test loads with JSON so corrupted that even salvaj fails."""
     # This JSON is one of the ERROR_CASES
-    very_corrupted_json_str = ERROR_CASES[0] # e.g., "}{"
+    very_corrupted_json_str = ERROR_CASES[0]  # e.g., "}{"
 
     # Expect SpiderMonkeyError as salvaj will be called and fail
     with pytest.raises(SpiderMonkeyError) as excinfo:
@@ -204,7 +249,7 @@ def test_loads_error_case_after_fallback():
     assert "[jsonic/" in error_message or "SyntaxError:" in error_message
 
     # Test with bytes input as well
-    very_corrupted_json_bytes = very_corrupted_json_str.encode('utf-8')
+    very_corrupted_json_bytes = very_corrupted_json_str.encode("utf-8")
     with pytest.raises(SpiderMonkeyError) as excinfo_bytes:
         loads(very_corrupted_json_bytes)
 
@@ -217,4 +262,15 @@ def test_loads_compatibility_params():
     valid_json_str = """{"key": "value"}"""
     expected_data = {"key": "value"}
     # These params are listed as ignored in the docstring
-    assert loads(valid_json_str, cls=None, object_hook=None, parse_float=None, parse_int=None, parse_constant=None, object_pairs_hook=None) == expected_data
+    assert (
+        loads(
+            valid_json_str,
+            cls=None,
+            object_hook=None,
+            parse_float=None,
+            parse_int=None,
+            parse_constant=None,
+            object_pairs_hook=None,
+        )
+        == expected_data
+    )
