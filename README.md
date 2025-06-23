@@ -149,9 +149,10 @@ pip install -e .
 
 Salvajson uses PythonMonkey to create a bridge between Python and JavaScript, allowing it to leverage the powerful jsonic parser. When you pass a JSON string to `salvaj()`:
 
-1. The string is passed to the JavaScript runtime
-2. jsonic attempts to parse and fix the JSON
-3. The fixed JSON is returned to Python as a string
+1. The string is passed to the JavaScript runtime.
+2. `jsonic` attempts to parse and fix the JSON.
+3. If successful, the fixed JSON is returned to Python as a string.
+4. If `jsonic` encounters an error it cannot recover from, this error is propagated to Python as a `pythonmonkey.SpiderMonkeyError`.
 
 ## License
 
