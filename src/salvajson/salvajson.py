@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Final
 
 import orjson
-from pythonmonkey import require  # type: ignore
+from pythonmonkey import require, SpiderMonkeyError  # type: ignore
 
 _SALVAJSON_DIR: Final[Path] = Path(__file__).parent.absolute()
 _salvajson_js = require(str(_SALVAJSON_DIR / "salvajson.js"))
@@ -19,6 +19,9 @@ def salvaj(json_str: str) -> str:
 
     Returns:
         Fixed JSON string that can be parsed by standard JSON parsers
+
+    Raises:
+        pythonmonkey.SpiderMonkeyError: If jsonic fails to parse/fix the string.
     """
     return _salvajson_js(json_str)
 
@@ -93,11 +96,15 @@ def loads(
         Python object parsed from the JSON input
 
     Raises:
-        JSONDecodeError: If parsing fails even after jsonic fallback
+        orjson.JSONDecodeError: If parsing fails after attempting fallback.
+        pythonmonkey.SpiderMonkeyError: If the internal jsonic parser fails during fallback.
     """
     try:
         return orjson.loads(s)
     except orjson.JSONDecodeError:
+        str_input: str
         if isinstance(s, bytes):
-            s = s.encode("utf-8")
-        return orjson.loads(str(salvaj(s)))
+            str_input = s.decode("utf-8")
+        else:
+            str_input = s
+        return orjson.loads(str(salvaj(str_input)))

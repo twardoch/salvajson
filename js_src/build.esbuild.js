@@ -6,7 +6,7 @@ esbuild.build({
     bundle: true,
     platform: 'node',
     format: 'cjs',
-    target: 'firefox134',
+    target: 'es2020', // Changed from firefox134 to a more general ES version
     minify: true,
 }).then(() => {
     console.log('Bundling complete!');
