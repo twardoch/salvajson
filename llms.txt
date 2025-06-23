@@ -1,0 +1,2081 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.github/
+  workflows/
+    ci.yml
+    update-js.yml
+js_src/
+  build.esbuild.js
+  package.json
+  salvajson.src.js
+src/
+  salvajson/
+    __init__.py
+    __main__.py
+    _version.py
+    salvajson.js
+    salvajson.py
+tests/
+  data/
+    test.json
+  __init__.py
+  conftest.py
+  test_salvajson.py
+.coveragerc
+.gitignore
+.pre-commit-config.yaml
+AUTHORS.md
+build.py
+CHANGELOG.md
+LICENSE
+pyproject.toml
+pytest.ini
+README.md
+tox.ini
+VERSION.txt
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".github/workflows/ci.yml">
+name: CI/CD
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'  # Match version tags
+  pull_request:  # Run CI checks on PRs
+  workflow_dispatch:  # Allow manual triggers
+
+permissions:
+  contents: write  # Needed for creating releases
+  id-token: write  # Needed for PyPI trusted publishing
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      wheel-distribution: ${{ steps.wheel-distribution.outputs.path }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # deep clone for versioning
+      - uses: actions/setup-python@v5
+        id: setup-python
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip --verbose
+          pip install build twine hatch --verbose
+          cd js_src && npm ci --verbose
+      - name: Build package
+        run: hatch build
+      - name: Record wheel distribution path
+        id: wheel-distribution
+        run: echo "path=$(ls dist/*.whl)" >> $GITHUB_OUTPUT
+      - name: Store distribution files
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-distribution-files
+          path: dist/
+          retention-days: 5
+          if-no-files-found: error  # Fail if dist/ is empty
+
+  test:
+    needs: prepare
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+        platform: [ubuntu-latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        id: setup-python
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Retrieve distribution files
+        uses: actions/download-artifact@v4
+        with:
+          name: python-distribution-files
+          path: dist/
+          if-no-files-found: error
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip --verbose
+          pip install -e ".[test]" --verbose
+      - name: Run tests
+        run: pytest -v
+
+  publish:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')  # Only run on version tags
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/salvajson  # Replace with your package name
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install twine
+      - name: Retrieve distribution files
+        uses: actions/download-artifact@v4
+        with:
+          name: python-distribution-files
+          path: dist/
+          if-no-files-found: error
+      - name: Check dist contents
+        run: |
+          ls -la dist/
+          test -n "$(find dist -name '*.whl')" || exit 1
+          test -n "$(find dist -name '*.tar.gz')" || exit 1
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: twine upload dist/* --verbose
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          gh release create "$tag" \
+            --title="Release $tag" \
+            --draft=false \
+            --prerelease=false \
+            ./dist/*
+</file>
+
+<file path=".github/workflows/update-js.yml">
+name: Update JS Dependencies
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Run weekly
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  update-js:
+    # Cancel any in-progress runs of this workflow if a new one is triggered
+    concurrency: update-js
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Cache Node modules to speed up repeated installs
+      - name: Cache Node modules
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install and build JS
+        run: |
+          cd js_src
+          npm ci
+          npm run build
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: 'chore: update JS dependencies and rebuild'
+          title: 'Update JS dependencies'
+          body: |
+            Automated update of JS dependencies and rebuild of the bundle.
+            Please review the changes before merging.
+          branch: update-js-deps
+          delete-branch: true
+</file>
+
+<file path="js_src/build.esbuild.js">
+const esbuild = require('esbuild');
+
+esbuild.build({
+    entryPoints: ['./salvajson.src.js'], // Entry file
+    outfile: '../src/salvajson/salvajson.js', // Updated output path
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    target: 'es2020', // Changed from firefox134 to a more general ES version
+    minify: true,
+}).then(() => {
+    console.log('Bundling complete!');
+}).catch((err) => {
+    console.error('Bundling failed:', err);
+    process.exit(1);
+});
+</file>
+
+<file path="js_src/package.json">
+{
+  "name": "salvajson-js",
+  "private": true,
+  "scripts": {
+    "build": "node build.esbuild.js"
+  },
+  "dependencies": {
+    "jsonic": "^2.16.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.0"
+  }
+}
+</file>
+
+<file path="js_src/salvajson.src.js">
+let { Jsonic } = require('jsonic')
+
+let reparse = (s) => {
+    try {
+        // Ensure Jsonic output is an object/array before stringifying,
+        // as Jsonic can return primitive types for certain inputs (e.g. "123").
+        const parsed = Jsonic(s);
+        // Check if Jsonic itself failed and returned an error object
+        // (Jsonic's own error handling can be a bit peculiar depending on options)
+        if (parsed instanceof Error) {
+            throw parsed;
+        }
+        return JSON.stringify(parsed);
+    } catch (e) {
+        // Re-throw the error so pythonmonkey can catch it
+        throw e;
+    }
+}
+
+module.exports = reparse
+</file>
+
+<file path="src/salvajson/__init__.py">
+"""JSON Salvation - Parse corrupted JSON files using jsonic.
+
+This package provides tools for parsing and fixing corrupted JSON files using
+the powerful jsonic parser. It bridges Python and JavaScript through
+PythonMonkey to leverage jsonic's flexible parsing capabilities.
+
+The package provides three main functions:
+
+    salvaj(json_str: str) -> str
+        Parse potentially corrupted JSON strings using jsonic and return
+        valid JSON.
+
+    dumps(obj, *, indent=None, sort_keys=False, **kw) -> str
+        Serialize Python objects to JSON strings using orjson for high
+        performance. Supports standard json.dumps() parameters for
+        compatibility.
+
+    loads(s: bytes | str, **kw) -> Any
+        Parse JSON strings into Python objects using orjson for high
+        performance, with fallback to jsonic (salvaj). Supports standard
+        json.loads() parameters for compatibility.
+
+Example:
+    >>> from salvajson import salvaj, dumps, loads
+    >>> corrupted = '{name: "John", age: 30}'
+    >>> fixed = salvaj(corrupted)
+    >>> print(fixed)
+    {"name":"John","age":30}
+    >>> data = loads(fixed)
+    >>> print(dumps(data, indent=2))
+    {
+      "name": "John",
+      "age": 30
+    }
+
+The package also provides a command-line interface:
+    $ python -m salvajson input.json
+"""
+
+from ._version import __version__
+from .salvajson import dumps, loads, salvaj
+
+__all__ = ["__version__", "dumps", "loads", "salvaj"]
+</file>
+
+<file path="src/salvajson/__main__.py">
+#!/usr/bin/env python
+
+from pathlib import Path
+
+from fire import Fire  # type: ignore
+
+from . import salvaj
+
+
+def cli(path: str | Path) -> str:
+    """Parse potentially corrupted JSON file using jsonic.
+
+    Args:
+        path: Path to the JSON file to parse
+
+    Returns:
+        Fixed JSON string that can be parsed by standard JSON parsers
+    """
+    return salvaj(Path(path).read_text())
+
+
+if __name__ == "__main__":
+    Fire(cli)
+</file>
+
+<file path="src/salvajson/_version.py">
+"""Version information."""
+
+__version__ = "0.0.0"  # Will be updated by semantic-release
+</file>
+
+<file path="src/salvajson/salvajson.js">
+var V=(t,n)=>()=>(n||t((n={exports:{}}).exports,n),n.exports);var re=V(C=>{"use strict";Object.defineProperty(C,"__esModule",{value:!0});C.STRING=C.INSPECT=C.EMPTY=C.AFTER=C.BEFORE=C.CLOSE=C.OPEN=void 0;C.OPEN="o";C.CLOSE="c";C.BEFORE="b";C.AFTER="a";C.EMPTY="";C.INSPECT=Symbol.for("nodejs.util.inspect.custom");C.STRING="string"});var de=V(j=>{"use strict";Object.defineProperty(j,"__esModule",{value:!0});j.makeTextMatcher=j.makeNumberMatcher=j.makeCommentMatcher=j.makeStringMatcher=j.makeLineMatcher=j.makeSpaceMatcher=j.makeFixedMatcher=j.makeMatchMatcher=j.makeToken=j.makePoint=j.makeLex=j.makeNoToken=void 0;var W=re(),M=fe(),We=class{constructor(n,e,i,l){this.len=-1,this.sI=0,this.rI=1,this.cI=1,this.token=[],this.len=n,e!=null&&(this.sI=e),i!=null&&(this.rI=i),l!=null&&(this.cI=l)}toString(){return"Point["+[this.sI+"/"+this.len,this.rI,this.cI]+(0<this.token.length?" "+this.token:"")+"]"}[W.INSPECT](){return this.toString()}},ve=(...t)=>new We(...t);j.makePoint=ve;var He=class{constructor(n,e,i,l,r,s,u){this.isToken=!0,this.name=W.EMPTY,this.tin=-1,this.val=void 0,this.src=W.EMPTY,this.sI=-1,this.rI=-1,this.cI=-1,this.len=-1,this.name=n,this.tin=e,this.src=l,this.val=i,this.sI=r.sI,this.rI=r.rI,this.cI=r.cI,this.use=s,this.why=u,this.len=l==null?0:l.length}resolveVal(n,e){return typeof this.val=="function"?this.val(n,e):this.val}bad(n,e){return this.err=n,e!=null&&(this.use=(0,M.deep)(this.use||{},e)),this}toString(){return"Token["+this.name+"="+this.tin+" "+(0,M.snip)(this.src)+(this.val===void 0||this.name==="#ST"||this.name==="#TX"?"":"="+(0,M.snip)(this.val))+" "+[this.sI,this.rI,this.cI]+(this.use==null?"":" "+(0,M.snip)(""+JSON.stringify(this.use).replace(/"/g,""),22))+(this.err==null?"":" "+this.err)+(this.why==null?"":" "+(0,M.snip)(""+this.why,22))+"]"}[W.INSPECT](){return this.toString()}},Qe=(...t)=>new He(...t);j.makeToken=Qe;var Nt=()=>Qe("",-1,void 0,W.EMPTY,ve(-1));j.makeNoToken=Nt;var wt=(t,n)=>{let e=(0,M.regexp)(null,"^(",t.rePart.fixed,")");return function(l){let r=t.fixed;if(!r.lex)return;if(t.fixed.check){let a=t.fixed.check(l);if(a&&a.done)return a.token}let s=l.pnt,o=l.src.substring(s.sI).match(e);if(o){let a=o[1],m=a.length;if(0<m){let d,p=r.token[a];return p!=null&&(d=l.token(p,void 0,a,s),s.sI+=m,s.cI+=m),d}}}};j.makeFixedMatcher=wt;var Pt=(t,n)=>{let e=(0,M.values)(t.match.value),i=(0,M.values)(t.match.token);return e.length===0&&i.length===0?null:function(r,s,u=0){if(!t.match.lex)return;if(t.match.check){let p=t.match.check(r);if(p&&p.done)return p.token}let a=r.pnt,m=r.src.substring(a.sI),d=s.state==="o"?0:1;for(let p of e)if(p.match instanceof RegExp){let g=m.match(p.match);if(g){let h=g[0],k=h.length;if(0<k){let c,f=p.val?p.val(g):h;return c=r.token("#VL",f,h,a),a.sI+=k,a.cI+=k,c}}}else{let g=p.match(r,s);if(g!=null)return g}for(let p of i)if(!(p.tin$&&!s.spec.def.tcol[d][u].includes(p.tin$)))if(p instanceof RegExp){let g=m.match(p);if(g){let h=g[0],k=h.length;if(0<k){let c,f=p.tin$;return c=r.token(f,h,h,a),a.sI+=k,a.cI+=k,c}}}else{let g=p(r,s);if(g!=null)return g}}};j.makeMatchMatcher=Pt;var Ct=(t,n)=>{let e=n.comment;t.comment={lex:e?!!e.lex:!1,def:(e?.def?(0,M.entries)(e.def):[]).reduce((r,[s,u])=>{if(u==null||u===!1)return r;let o={name:s,start:u.start,end:u.end,line:!!u.line,lex:!!u.lex,eatline:!!u.eatline};return r[s]=o,r},{})};let i=t.comment.lex?(0,M.values)(t.comment.def).filter(r=>r.lex&&r.line):[],l=t.comment.lex?(0,M.values)(t.comment.def).filter(r=>r.lex&&!r.line):[];return function(s,u){if(!t.comment.lex)return;if(t.comment.check){let g=t.comment.check(s);if(g&&g.done)return g.token}let a=s.pnt,m=s.src.substring(a.sI),d=a.rI,p=a.cI;for(let g of i)if(m.startsWith(g.start)){let h=m.length,k=g.start.length;for(p+=g.start.length;k<h&&!t.line.chars[m[k]];)p++,k++;if(g.eatline)for(;k<h&&t.line.chars[m[k]];)t.line.rowChars[m[k]]&&d++,k++;let c=m.substring(0,k),f=s.token("#CM",void 0,c,a);return a.sI+=c.length,a.cI=p,a.rI=d,f}for(let g of l)if(m.startsWith(g.start)){let h=m.length,k=g.start.length,c=g.end;for(p+=g.start.length;k<h&&!m.substring(k).startsWith(c);)t.line.rowChars[m[k]]&&(d++,p=0),p++,k++;if(m.substring(k).startsWith(c)){if(p+=c.length,g.eatline)for(;k<h&&t.line.chars[m[k]];)t.line.rowChars[m[k]]&&d++,k++;let f=m.substring(0,k+c.length),b=s.token("#CM",void 0,f,a);return a.sI+=f.length,a.rI=d,a.cI=p,b}else return s.bad(M.S.unterminated_comment,a.sI,a.sI+9*g.start.length)}}};j.makeCommentMatcher=Ct;var Rt=(t,n)=>{let e=(0,M.regexp)(t.line.lex?null:"s","^(.*?)",...t.rePart.ender);return function(l){if(t.text.check){let d=t.text.check(l);if(d&&d.done)return d.token}let r=t.text,s=l.pnt,u=l.src.substring(s.sI),o=t.value.def,a=t.value.defre,m=u.match(e);if(m){let d=m[1],p=m[2],g;if(d!=null){let h=d.length;if(0<h){let k;if(t.value.lex)if((k=o[d])!==void 0)g=l.token("#VL",k.val,d,s),s.sI+=h,s.cI+=h;else for(let c in a){let f=a[c];if(f.match){let b=f.match.exec(f.consume?u:d);if(b&&(f.consume||b[0].length===d.length)){let I=b[0];if(f.val==null)g=l.token("#VL",I,I,s);else{let N=f.val(b);g=l.token("#VL",N,I,s)}s.sI+=I.length,s.cI+=I.length}}}g==null&&r.lex&&(g=l.token("#TX",d,d,s),s.sI+=h,s.cI+=h)}}if(g&&(g=ct(l,g,p)),g&&0<t.text.modify.length){let h=t.text.modify;for(let k=0;k<h.length;k++)g.val=h[k](g.val,l,t,n)}return g}}};j.makeTextMatcher=Rt;var At=(t,n)=>{let e=t.number,i=(0,M.regexp)(null,["^([-+]?(0(",[e.hex?"x[0-9a-fA-F_]+":null,e.oct?"o[0-7_]+":null,e.bin?"b[01_]+":null].filter(r=>r!=null).join("|"),")|\\.?[0-9]+([0-9_]*[0-9])?)","(\\.[0-9]?([0-9_]*[0-9])?)?","([eE][-+]?[0-9]+([0-9_]*[0-9])?)?"].join("").replace(/_/g,e.sep?(0,M.escre)(e.sepChar):""),")",...t.rePart.ender),l=e.sep?(0,M.regexp)("g",(0,M.escre)(e.sepChar)):void 0;return function(s){if(e=t.number,!e.lex)return;if(t.number.check){let d=t.number.check(s);if(d&&d.done)return d.token}let u=s.pnt,o=s.src.substring(u.sI),a=t.value.def,m=o.match(i);if(m){let d=m[1],p=m[9],g,h=!0;if(d!=null&&(h=!t.number.exclude||!d.match(t.number.exclude))){let k=d.length;if(0<k){let c;if(t.value.lex&&(c=a[d])!==void 0)g=s.token("#VL",c.val,d,u);else{let f=l?d.replace(l,""):d,b=+f;if(isNaN(b)){let I=f[0];(I==="-"||I==="+")&&(b=(I==="-"?-1:1)*+f.substring(1))}isNaN(b)||(g=s.token("#NR",b,d,u),u.sI+=k,u.cI+=k)}}}return h&&(g=ct(s,g,p)),g}}};j.makeNumberMatcher=At;var Lt=(t,n)=>{let e=n.string||{};return t.string=t.string||{},t.string=(0,M.deep)(t.string,{lex:!!e?.lex,quoteMap:(0,M.charset)(e.chars),multiChars:(0,M.charset)(e.multiChars),escMap:{...e.escape},escChar:e.escapeChar,escCharCode:e.escapeChar==null?void 0:e.escapeChar.charCodeAt(0),allowUnknown:!!e.allowUnknown,replaceCodeMap:(0,M.omap)((0,M.clean)({...e.replace}),([i,l])=>[i.charCodeAt(0),l]),hasReplace:!1,abandon:!!e.abandon}),t.string.escMap=(0,M.clean)(t.string.escMap),t.string.hasReplace=0<(0,M.keys)(t.string.replaceCodeMap).length,function(l){let r=t.string;if(!r.lex)return;if(t.string.check){let N=t.string.check(l);if(N&&N.done)return N.token}let{quoteMap:s,escMap:u,escChar:o,escCharCode:a,multiChars:m,allowUnknown:d,replaceCodeMap:p,hasReplace:g}=r,{pnt:h,src:k}=l,{sI:c,rI:f,cI:b}=h,I=k.length;if(s[k[c]]){let N=k[c],le=c,se=f,oe=m[N];++c,++b;let q=[],B;for(c;c<I;c++){b++;let te=k[c];if(B=void 0,N===te){c++;break}else if(o===te){c++,b++;let K=u[k[c]];if(K!=null)q.push(K);else if(k[c]==="x"){c++;let A=parseInt(k.substring(c,c+2),16);if(isNaN(A))return r.abandon?void 0:(c=c-2,b-=2,h.sI=c,h.cI=b,l.bad(M.S.invalid_ascii,c,c+4));let P=String.fromCharCode(A);q.push(P),c+=1,b+=2}else if(k[c]==="u"){c++;let A=k[c]==="{"?(c++,1):0,P=A?6:4,ne=parseInt(k.substring(c,c+P),16);if(isNaN(ne))return r.abandon?void 0:(c=c-2-A,b-=2,h.sI=c,h.cI=b,l.bad(M.S.invalid_unicode,c,c+P+2+2*A));let ae=String.fromCodePoint(ne);q.push(ae),c+=P-1+A,b+=P+A}else if(d)q.push(k[c]);else return r.abandon?void 0:(h.sI=c,h.cI=b-1,l.bad(M.S.unexpected,c,c+1))}else if(g&&(B=p[k.charCodeAt(c)])!==void 0)q.push(B),b++;else{let K=c,A=N.charCodeAt(0),P=k.charCodeAt(c);for(;(!g||(B=p[P])===void 0)&&c<I&&32<=P&&A!==P&&a!==P;)P=k.charCodeAt(++c),b++;if(b--,B===void 0&&P<32)if(oe&&t.line.chars[k[c]])t.line.rowChars[k[c]]&&(h.rI=++f),b=1,q.push(k.substring(K,c+1));else return r.abandon?void 0:(h.sI=c,h.cI=b,l.bad(M.S.unprintable,c,c+1));else q.push(k.substring(K,c)),c--}}if(k[c-1]!==N||h.sI===c-1)return r.abandon?void 0:(h.rI=se,l.bad(M.S.unterminated_string,le,c));let ue=l.token("#ST",q.join(W.EMPTY),k.substring(h.sI,c),h);return h.sI=c,h.rI=f,h.cI=b,ue}}};j.makeStringMatcher=Lt;var Yt=(t,n)=>function(i){if(!t.line.lex)return;if(t.line.check){let p=t.line.check(i);if(p&&p.done)return p.token}let{chars:l,rowChars:r}=t.line,{pnt:s,src:u}=i,{sI:o,rI:a}=s,m=t.line.single,d;for(m&&(d={});l[u[o]]&&!(d&&(d[u[o]]=(d[u[o]]||0)+1,m&&1<d[u[o]]));)a+=r[u[o]]?1:0,o++;if(s.sI<o){let p=u.substring(s.sI,o),g=i.token("#LN",void 0,p,s);return s.sI+=p.length,s.rI=a,s.cI=1,g}};j.makeLineMatcher=Yt;var qt=(t,n)=>function(i){if(!t.space.lex)return;if(t.space.check){let a=t.space.check(i);if(a&&a.done)return a.token}let{chars:l}=t.space,{pnt:r,src:s}=i,{sI:u,cI:o}=r;for(;l[s[u]];)u++,o++;if(r.sI<u){let a=s.substring(r.sI,u),m=i.token("#SP",void 0,a,r);return r.sI+=a.length,r.cI=o,m}};j.makeSpaceMatcher=qt;function ct(t,n,e){let i=t.pnt,l=n;if(t.cfg.fixed.lex&&e!=null&&0<e.length){let s,u=t.cfg.fixed.token[e];u!=null&&(s=t.token(u,void 0,e,i)),s!=null&&(i.sI+=s.src.length,i.cI+=s.src.length,n==null?l=s:i.token.push(s))}return l}var Xe=class{constructor(n){this.src=W.EMPTY,this.ctx={},this.cfg={},this.pnt=ve(-1),this.ctx=n,this.src=n.src(),this.cfg=n.cfg,this.pnt=ve(this.src.length)}token(n,e,i,l,r,s){let u,o;return typeof n=="string"?(o=n,u=(0,M.tokenize)(o,this.cfg)):(u=n,o=(0,M.tokenize)(n,this.cfg)),Qe(o,u,e,i,l||this.pnt,r,s)}next(n,e,i,l){let r,s=this.pnt,u=s.sI,o;if(s.end)r=s.end;else if(0<s.token.length)r=s.token.shift();else if(s.len<=s.sI)s.end=this.token("#ZZ",void 0,"",s),r=s.end;else{try{for(let a of this.cfg.lex.match)if(r=a(this,n,l)){o=a;break}}catch(a){r=r||this.token("#BD",void 0,this.src[s.sI],s,{err:a},a.code||M.S.unexpected)}r=r||this.token("#BD",void 0,this.src[s.sI],s,void 0,M.S.unexpected)}return this.ctx.log&&this.ctx.log(M.S.lex,this.ctx,n,this,s,u,o,r,e,i,l),this.ctx.sub.lex&&this.ctx.sub.lex.map(a=>a(r,n,this.ctx)),r}tokenize(n){return(0,M.tokenize)(n,this.cfg)}bad(n,e,i){return this.token("#BD",void 0,0<=e&&e<=i?this.src.substring(e,i):this.src[this.pnt.sI],void 0,void 0,n)}},Ft=(...t)=>new Xe(...t);j.makeLex=Ft});var fe=V(O=>{"use strict";Object.defineProperty(O,"__esModule",{value:!0});O.values=O.keys=O.omap=O.isarr=O.entries=O.defprop=O.assign=O.S=O.JsonicError=void 0;O.badlex=Dt;O.charset=he;O.clean=Se;O.clone=Gt;O.configure=$t;O.deep=pe;O.errdesc=pt;O.errinject=ft;O.escre=D;O.errsite=ht;O.filterRules=Zt;O.makelog=zt;O.mesc=Kt;O.regexp=ye;O.snip=kt;O.srcfmt=gt;O.tokenize=ie;O.trimstk=Vt;O.parserwrap=Ht;O.prop=bt;O.str=tt;O.findTokenSet=Bt;O.modlist=Wt;O.strinject=vt;O.errmsg=mt;var Y=re(),dt=de(),_e=t=>t==null?[]:Object.keys(t);O.keys=_e;var et=t=>t==null?[]:Object.values(t);O.values=et;var X=t=>t==null?[]:Object.entries(t);O.entries=X;var Q=(t,...n)=>Object.assign(t??{},...n);O.assign=Q;var Jt=t=>Array.isArray(t);O.isarr=Jt;var Ut=Object.defineProperty;O.defprop=Ut;var H=(t,n)=>Object.entries(t||{}).reduce((e,i)=>{let l=n?n(i):i;l[0]===void 0?delete e[i[0]]:e[l[0]]=l[1];let r=2;for(;l[r]!==void 0;)e[l[r]]=l[r+1],r+=2;return e},{});O.omap=H;var L={indent:". ",logindent:"  ",space:" ",gap:"  ",Object:"Object",Array:"Array",object:"object",string:"string",function:"function",unexpected:"unexpected",map:"map",list:"list",elem:"elem",pair:"pair",val:"val",node:"node",no_re_flags:Y.EMPTY,unprintable:"unprintable",invalid_ascii:"invalid_ascii",invalid_unicode:"invalid_unicode",invalid_lex_state:"invalid_lex_state",unterminated_string:"unterminated_string",unterminated_comment:"unterminated_comment",lex:"lex",parse:"parse",error:"error",none:"none",imp_map:"imp,map",imp_list:"imp,list",imp_null:"imp,null",end:"end",open:"open",close:"close",rule:"rule",stack:"stack",nUll:"null",name:"name",make:"make",colon:":"};O.S=L;var me=class extends SyntaxError{constructor(n,e,i,l,r){e=pe({},e);let s=pt(n,e,i,l,r);super(s.message),Q(this,s)}};O.JsonicError=me;function $t(t,n,e){var i,l,r,s,u,o,a,m,d,p,g,h,k,c,f,b,I,N,le,se,oe,q,B,ue,te,K,A,P,ne,ae,je,xe,Ne,we,Pe,Ce,Re,Ae,Le,Ye,qe,Fe,Je,Ue,$e,Be,Ke,Ve,De,ze;let y=n||{};y.t=y.t||{},y.tI=y.tI||1;let F=v=>ie(v,y);e.standard$!==!1&&(F("#BD"),F("#ZZ"),F("#UK"),F("#AA"),F("#SP"),F("#LN"),F("#CM"),F("#NR"),F("#ST"),F("#TX"),F("#VL")),y.safe={key:((i=e.safe)===null||i===void 0?void 0:i.key)!==!1},y.fixed={lex:!!(!((l=e.fixed)===null||l===void 0)&&l.lex),token:e.fixed?H(Se(e.fixed.token),([v,E])=>[E,ie(v,y)]):{},ref:void 0,check:(r=e.fixed)===null||r===void 0?void 0:r.check},y.fixed.ref=H(y.fixed.token,([v,E])=>[v,E]),y.fixed.ref=Object.assign(y.fixed.ref,H(y.fixed.ref,([v,E])=>[E,v])),y.match={lex:!!(!((s=e.match)===null||s===void 0)&&s.lex),value:e.match?H(Se(e.match.value),([v,E])=>[v,E]):{},token:e.match?H(Se(e.match.token),([v,E])=>[ie(v,y),E]):{},check:(u=e.match)===null||u===void 0?void 0:u.check},H(y.match.token,([v,E])=>[v,(E.tin$=+v,E)]);let xt=e.tokenSet?Object.keys(e.tokenSet).reduce((v,E)=>(v[E]=e.tokenSet[E].filter(U=>U!=null).map(U=>F(U)),v),{}):{};y.tokenSet=y.tokenSet||{},X(xt).map(v=>{let E=v[0],U=v[1];y.tokenSet[E]?(y.tokenSet[E].length=0,y.tokenSet[E].push(...U)):y.tokenSet[E]=U}),y.tokenSetTins=X(y.tokenSet).reduce((v,E)=>(v[E[0]]=v[E[0]]||{},E[1].map(U=>v[E[0]][U]=!0),v),{}),y.tokenSetTins.IGNORE=y.tokenSetTins.IGNORE||{},y.space={lex:!!(!((o=e.space)===null||o===void 0)&&o.lex),chars:he((a=e.space)===null||a===void 0?void 0:a.chars),check:(m=e.space)===null||m===void 0?void 0:m.check},y.line={lex:!!(!((d=e.line)===null||d===void 0)&&d.lex),chars:he((p=e.line)===null||p===void 0?void 0:p.chars),rowChars:he((g=e.line)===null||g===void 0?void 0:g.rowChars),single:!!(!((h=e.line)===null||h===void 0)&&h.single),check:(k=e.line)===null||k===void 0?void 0:k.check},y.text={lex:!!(!((c=e.text)===null||c===void 0)&&c.lex),modify:(((f=y.text)===null||f===void 0?void 0:f.modify)||[]).concat((!((b=e.text)===null||b===void 0)&&b.modify?[e.text.modify]:[]).flat()).filter(v=>v!=null),check:(I=e.text)===null||I===void 0?void 0:I.check},y.number={lex:!!(!((N=e.number)===null||N===void 0)&&N.lex),hex:!!(!((le=e.number)===null||le===void 0)&&le.hex),oct:!!(!((se=e.number)===null||se===void 0)&&se.oct),bin:!!(!((oe=e.number)===null||oe===void 0)&&oe.bin),sep:((q=e.number)===null||q===void 0?void 0:q.sep)!=null&&e.number.sep!=="",exclude:(B=e.number)===null||B===void 0?void 0:B.exclude,sepChar:(ue=e.number)===null||ue===void 0?void 0:ue.sep,check:(te=e.number)===null||te===void 0?void 0:te.check},y.value={lex:!!(!((K=e.value)===null||K===void 0)&&K.lex),def:X(((A=e.value)===null||A===void 0?void 0:A.def)||{}).reduce((v,E)=>(E[1]==null||E[1]===!1||E[1].match||(v[E[0]]=E[1]),v),{}),defre:X(((P=e.value)===null||P===void 0?void 0:P.def)||{}).reduce((v,E)=>(E[1]&&E[1].match&&(v[E[0]]=E[1],v[E[0]].consume=!!v[E[0]].consume),v),{})},y.rule={start:((ne=e.rule)===null||ne===void 0?void 0:ne.start)==null?"val":e.rule.start,maxmul:((ae=e.rule)===null||ae===void 0?void 0:ae.maxmul)==null?3:e.rule.maxmul,finish:!!(!((je=e.rule)===null||je===void 0)&&je.finish),include:!((xe=e.rule)===null||xe===void 0)&&xe.include?e.rule.include.split(/\s*,+\s*/).filter(v=>v!==""):[],exclude:!((Ne=e.rule)===null||Ne===void 0)&&Ne.exclude?e.rule.exclude.split(/\s*,+\s*/).filter(v=>v!==""):[]},y.map={extend:!!(!((we=e.map)===null||we===void 0)&&we.extend),merge:(Pe=e.map)===null||Pe===void 0?void 0:Pe.merge},y.list={property:!!(!((Ce=e.list)===null||Ce===void 0)&&Ce.property)};let Ge=Object.keys(y.fixed.token).sort((v,E)=>E.length-v.length).map(v=>D(v)).join("|"),Ze=!((Re=e.comment)===null||Re===void 0)&&Re.lex?(e.comment.def?et(e.comment.def):[]).filter(v=>v&&v.lex).map(v=>D(v.start)).join("|"):"",at=["([",D(_e(he(y.space.lex&&y.space.chars,y.line.lex&&y.line.chars)).join("")),"]",(typeof e.ender=="string"?e.ender.split(""):Array.isArray(e.ender)?e.ender:[]).map(v=>"|"+D(v)).join(""),Ge===""?"":"|",Ge,Ze===""?"":"|",Ze,"|$)"];return y.rePart={fixed:Ge,ender:at,commentStart:Ze},y.re={ender:ye(null,...at),rowChars:ye(null,D((Ae=e.line)===null||Ae===void 0?void 0:Ae.rowChars)),columns:ye(null,"["+D((Le=e.line)===null||Le===void 0?void 0:Le.chars)+"]","(.*)$")},y.lex={empty:!!(!((Ye=e.lex)===null||Ye===void 0)&&Ye.empty),emptyResult:(qe=e.lex)===null||qe===void 0?void 0:qe.emptyResult,match:!((Fe=e.lex)===null||Fe===void 0)&&Fe.match?X(e.lex.match).reduce((v,E)=>{let U=E[0],be=E[1];if(be){let ce=be.make(y,e);ce&&(ce.matcher=U,ce.make=be.make,ce.order=be.order),v.push(ce)}return v},[]).filter(v=>v!=null&&v!==!1&&-1<+v.order).sort((v,E)=>v.order-E.order):[]},y.parse={prepare:et((Je=e.parse)===null||Je===void 0?void 0:Je.prepare)},y.debug={get_console:((Ue=e.debug)===null||Ue===void 0?void 0:Ue.get_console)||(()=>console),maxlen:(($e=e.debug)===null||$e===void 0?void 0:$e.maxlen)==null?99:e.debug.maxlen,print:{config:!!(!((Ke=(Be=e.debug)===null||Be===void 0?void 0:Be.print)===null||Ke===void 0)&&Ke.config),src:(De=(Ve=e.debug)===null||Ve===void 0?void 0:Ve.print)===null||De===void 0?void 0:De.src}},y.error=e.error||{},y.hint=e.hint||{},!((ze=e.config)===null||ze===void 0)&&ze.modify&&_e(e.config.modify).forEach(v=>e.config.modify[v](y,e)),y.debug.print.config&&y.debug.get_console().dir(y,{depth:null}),y.result={fail:[]},e.result&&(y.result.fail=[...e.result.fail]),Q(t.options,e),Q(t.token,y.t),Q(t.tokenSet,y.tokenSet),Q(t.fixed,y.fixed.ref),y}function ie(t,n,e){let i=n.t,l=i[t];return l==null&&Y.STRING===typeof t&&(l=n.tI++,i[l]=t,i[t]=l,i[t.substring(1)]=l,e!=null&&Q(e.token,n.t)),l}function Bt(t,n){return n.tokenSet[t]}function Kt(t,n){return n=new String(t),n.esc=!0,n}function ye(t,...n){return new RegExp(n.map(e=>e.esc?D(e.toString()):e).join(Y.EMPTY),t??"")}function D(t){return t==null?"":t.replace(/[-\\|\]{}()[^$+*?.!=]/g,"\\$&").replace(/\t/g,"\\t").replace(/\r/g,"\\r").replace(/\n/g,"\\n")}function pe(t,...n){let e=L.function===typeof t,i=t!=null&&(L.object===typeof t||e);for(let l of n){let r=L.function===typeof l,s=l!=null&&(L.object===typeof l||r),u;if(i&&s&&!r&&Array.isArray(t)===Array.isArray(l))for(let o in l)t[o]=pe(t[o],l[o]);else t=l===void 0?t:r?l:s?L.function===typeof(u=l.constructor)&&L.Object!==u.name&&L.Array!==u.name?l:pe(Array.isArray(l)?[]:{},l):l,e=L.function===typeof t,i=t!=null&&(L.object===typeof t||e)}return t}function ft(t,n,e,i,l,r){let s={...r||{},...r.cfg||{},...r.opts||{},...i||{},...l||{},...r.meta||{},...e||{},code:n,details:e,token:i,rule:l,ctx:r};return vt(t,s,{indent:"  "})}function Vt(t){t.stack&&(t.stack=t.stack.split(`
+`).filter(n=>!n.includes("jsonic/jsonic")).map(n=>n.replace(/    at /,"at ")).join(`
+`))}function ht(t){let{src:n,sub:e,msg:i,cline:l,row:r,col:s,pos:u}=t;r=r!=null&&0<r?r:1,s=s!=null&&0<s?s:1,u=u!=null&&0<u?u:n==null?0:n.split(`
+`).reduce((c,f,b)=>(c+=b<r-1?f.length+1:b===r-1?s:0,c),0);let o=e??Y.EMPTY,a=n.substring(Math.max(0,u-333),u).split(`
+`),m=n.substring(u,u+333).split(`
+`),d=2+(Y.EMPTY+(r+2)).length,p=r<3?1:r-2,g=c=>(l??"")+(Y.EMPTY+p++).padStart(d," ")+" | "+(l==null?"":"\x1B[0m")+(c??Y.EMPTY),h=a.length;return[2<h?g(a[h-3]):null,1<h?g(a[h-2]):null,g(a[h-1]+m[0])," ".repeat(d)+"   "+" ".repeat(s-1)+(l??"")+"^".repeat(o.length||1)+" "+i+(l==null?"":"\x1B[0m"),g(m[1]),g(m[2])].filter(c=>c!=null).join(`
+`)}function mt(t){let n=t.color!=null&&typeof t.color=="object"?t.color:void 0,e=t.color===!0||n,i={reset:e?"\x1B[0m":"",hi:e?"\x1B[91m":"",lo:e?"\x1B[2m":"",line:e?"\x1B[34m":"",...n||{}};return[t.prefix==null?null:typeof t.prefix=="function"?t.prefix(i,t):""+t.prefix,(t.code==null?"":i.hi+"["+(t.name==null?"":t.name+"/")+t.code+"]:")+i.reset+" "+(t.msg==null?"":t.msg),t.row!=null&&t.col!=null||t.file!=null?"  "+i.line+"-->"+i.reset+" "+(t.file==null?"<no-file>":t.file)+(t.row==null||t.col==null?"":":"+t.row+":"+t.col):null,t.src==null?"":ht({src:t.src,sub:t.sub,msg:t.smsg||t.msg,cline:i.line,row:t.row,col:t.col,pos:t.pos})+`
+`,t.hint==null?null:t.hint,t.suffix==null?null:typeof t.suffix=="function"?t.suffix(i,t):""+t.suffix].filter(r=>r!=null).join(`
+`)}function pt(t,n,e,i,l){var r,s,u;try{let o=l.cfg,a=l.meta,m=ft({msg:o.error[t]||((r=n?.use)===null||r===void 0?void 0:r.err)&&(n.use.err.code||n.use.err.message)||o.error.unknown,hint:(o.hint[t]||((u=(s=n.use)===null||s===void 0?void 0:s.err)===null||u===void 0?void 0:u.message)||o.hint.unknown||"").trim().split(`
+`).map(g=>"  "+g).join(`
+`)},t,n,e,i,l),d=mt({code:t,name:"jsonic",msg:m.msg,hint:m.hint,src:l.src(),file:a?a.fileName:void 0,row:e.rI,col:e.cI,pos:e.sI,sub:e.src,color:!0,suffix:g=>["","  "+g.lo+"https://jsonic.senecajs.org"+g.reset,"  "+g.lo+"--internal: tag="+(l.opts.tag||"")+"; rule="+i.name+"~"+i.state+"; token="+ie(e.tin,l.cfg)+(e.why==null?"":"~"+e.why)+"; plugins="+l.plgn().map(h=>h.name).join(",")+"--"+g.reset].join(`
+`)}),p={internal:{token:e,ctx:l}};return p={...Object.create(p),message:d,code:t,details:n,meta:a,fileName:a?a.fileName:void 0,lineNumber:e.rI,columnNumber:e.cI},p}catch(o){return console.log(o),{}}}function Dt(t,n,e){let i=t.next.bind(t);return t.next=(l,r,s,u)=>{let o=i(l,r,s,u);if(n===o.tin){let a={};throw o.use!=null&&(a.use=o.use),new me(o.why||L.unexpected,a,o,l,e)}return o},t}function zt(t,n){var e,i,l;let r=(l=(i=(e=t.opts)===null||e===void 0?void 0:e.plugin)===null||i===void 0?void 0:i.debug)===null||l===void 0?void 0:l.trace;if(n||r)if(typeof n?.log=="number"||r){let s=!1,u=n?.log;(u===-1||r)&&(u=1,s=!0),t.log=(...o)=>{if(s){let a=o.filter(m=>L.object!=typeof m).map(m=>L.function==typeof m?m.name:m).join(L.gap);t.cfg.debug.get_console().log(a)}else t.cfg.debug.get_console().dir(o,{depth:u})}}else typeof n.log=="function"&&(t.log=n.log);return t.log}function gt(t){return typeof t.debug.print.src=="function"?t.debug.print.src:n=>{let e=n==null?Y.EMPTY:Array.isArray(n)?JSON.stringify(n).replace(/]$/,X(n).filter(i=>isNaN(i[0])).map((i,l)=>(l===0?", ":"")+i[0]+": "+JSON.stringify(i[1]))+"]"):JSON.stringify(n);return e=e.substring(0,t.debug.maxlen)+(t.debug.maxlen<e.length?"...":Y.EMPTY),e}}function tt(t,n=44){let e;try{e=typeof t=="object"?JSON.stringify(t):""+t}catch{e=""+t}return kt(n<e.length?e.substring(0,n-3)+"...":e,n)}function kt(t,n=5){return t===void 0?"":(""+t).substring(0,n).replace(/[\r\n\t]/g,".")}function Gt(t){return pe(Object.create(Object.getPrototypeOf(t)),t)}function he(...t){return t==null?{}:t.filter(n=>n!==!1).map(n=>typeof n=="object"?_e(n).join(Y.EMPTY):n).join(Y.EMPTY).split(Y.EMPTY).reduce((n,e)=>(n[e]=e.charCodeAt(0),n),{})}function Se(t){for(let n in t)t[n]==null&&delete t[n];return t}function Zt(t,n){let e=["open","close"];for(let i of e)t.def[i]=t.def[i].map(l=>(l.g=typeof l.g=="string"?(l.g||"").split(/\s*,+\s*/):l.g||[],l)).filter(l=>n.rule.include.reduce((r,s)=>r||l.g!=null&&l.g.indexOf(s)!==-1,n.rule.include.length===0)).filter(l=>n.rule.exclude.reduce((r,s)=>r&&(l.g==null||l.g.indexOf(s)===-1),!0));return t}function bt(t,n,e){let i=t;try{let l=n.split("."),r;for(let s=0;s<l.length;s++){if(r=l[s],r==="__proto__")throw new Error(r);s<l.length-1&&(t=t[r]=t[r]||{})}if(e!==void 0){if(r==="__proto__")throw new Error(r);t[r]=e}return t[r]}catch{throw new Error("Cannot "+(e===void 0?"get":"set")+" path "+n+" on object: "+tt(i)+(e===void 0?"":" to value: "+tt(e,22)))}}function Wt(t,n){if(n&&t){if(0<t.length){if(n.delete&&0<n.delete.length)for(let i=0;i<n.delete.length;i++){let l=n.delete[i];if(l<0?-1*l<=t.length:l<t.length){let r=(t.length+l)%t.length;t[r]=null}}if(n.move)for(let i=0;i<n.move.length;i+=2){let l=(t.length+n.move[i])%t.length,r=(t.length+n.move[i+1])%t.length,s=t[l];t.splice(l,1),t.splice(r,0,s)}let e=t.filter(i=>i!=null);e.length!==t.length&&(t.length=0,t.push(...e))}if(n.custom){let e=n.custom(t);e!=null&&(t=e)}}return t}function Ht(t){return{start:function(n,e,i,l){try{return t.start(n,e,i,l)}catch(r){if(r.name==="SyntaxError"){let s=0,u=0,o=0,a=Y.EMPTY,m=r.message.match(/^Unexpected token (.) .*position\s+(\d+)/i);if(m){a=m[1],s=parseInt(m[2]),u=n.substring(0,s).replace(/[^\n]/g,Y.EMPTY).length;let p=s-1;for(;-1<p&&n.charAt(p)!==`
+`;)p--;o=Math.max(n.substring(p,s).length,0)}let d=r.token||(0,dt.makeToken)("#UK",ie("#UK",e.internal().config),void 0,a,(0,dt.makePoint)(a.length,s,r.lineNumber||u,r.columnNumber||o));throw new me(r.code||"json",r.details||{msg:r.message},d,{},r.ctx||{uI:-1,opts:e.options,cfg:e.internal().config,token:d,meta:i,src:()=>n,root:()=>{},plgn:()=>e.internal().plugins,inst:()=>e,rule:{name:"no-rule"},sub:{},xs:-1,v2:d,v1:d,t0:d,t1:d,tC:-1,kI:-1,rs:[],rsI:0,rsm:{},n:{},log:i?i.log:void 0,F:gt(e.internal().config),u:{},NORULE:{name:"no-rule"},NOTOKEN:{name:"no-token"}})}else throw r}}}}function vt(t,n,e){let i=typeof t,l=Array.isArray(t)?"array":t==null?"string":i==="object"?i:"string",r=l==="object"?t:l==="array"?t.reduce((u,o,a)=>(u[a]=o,u),{}):{_:t},s=n??{};return Object.entries(r).map(u=>r[u[0]]=u[1]==null?"":(""+u[1]).replace(/\{([\w_0-9.]+)}/g,(o,a)=>{var m;let d=bt(s,a);if(d=d===void 0?o:d,typeof d=="object"){let p=(m=d?.constructor)===null||m===void 0?void 0:m.name;p==="Object"||p==="Array"?d=JSON.stringify(d).replace(/([^"])"/g,"$1"):d=d.toString()}else d=""+d;return e&&typeof e.indent=="string"&&(d=d.replace(/\n/g,`
+`+e.indent)),d})),l==="string"?r._:l==="array"?Object.values(r):r}});var yt=V(Ee=>{"use strict";Object.defineProperty(Ee,"__esModule",{value:!0});Ee.defaults=void 0;var z=de(),Xt={safe:{key:!0},tag:"-",fixed:{lex:!0,token:{"#OB":"{","#CB":"}","#OS":"[","#CS":"]","#CL":":","#CA":","}},match:{lex:!0,token:{}},tokenSet:{IGNORE:["#SP","#LN","#CM"],VAL:["#TX","#NR","#ST","#VL"],KEY:["#TX","#NR","#ST","#VL"]},space:{lex:!0,chars:" 	"},line:{lex:!0,chars:`\r
+`,rowChars:`
+`,single:!1},text:{lex:!0},number:{lex:!0,hex:!0,oct:!0,bin:!0,sep:"_",exclude:void 0},comment:{lex:!0,def:{hash:{line:!0,start:"#",lex:!0,eatline:!1},slash:{line:!0,start:"//",lex:!0,eatline:!1},multi:{line:!1,start:"/*",end:"*/",lex:!0,eatline:!1}}},string:{lex:!0,chars:"'\"`",multiChars:"`",escapeChar:"\\",escape:{b:"\b",f:"\f",n:`
+`,r:"\r",t:"	",v:"\v",'"':'"',"'":"'","`":"`","\\":"\\","/":"/"},allowUnknown:!0,abandon:!1},map:{extend:!0,merge:void 0},list:{property:!0},value:{lex:!0,def:{true:{val:!0},false:{val:!1},null:{val:null}}},ender:[],plugin:{},debug:{get_console:()=>console,maxlen:99,print:{config:!1,src:void 0}},error:{unknown:"unknown error: {code}",unexpected:"unexpected character(s): {src}",invalid_unicode:"invalid unicode escape: {src}",invalid_ascii:"invalid ascii escape: {src}",unprintable:"unprintable character: {src}",unterminated_string:"unterminated string: {src}",unterminated_comment:"unterminated comment: {src}",unknown_rule:"unknown rule: {rulename}",end_of_source:"unexpected end of source"},hint:{unknown:`
+Since the error is unknown, this is probably a bug inside jsonic
+itself, or a plugin. Please consider posting a github issue - thanks!
+
+Code: {code}, Details:
+{details}`,unexpected:`
+The character(s) {src} were not expected at this point as they do not
+match the expected syntax, even under the relaxed jsonic rules. If it
+is not obviously wrong, the actual syntax error may be elsewhere. Try
+commenting out larger areas around this point until you get no errors,
+then remove the comments in small sections until you find the
+offending syntax. NOTE: Also check if any plugins you are using
+expect different syntax in this case.`,invalid_unicode:`
+The escape sequence {src} does not encode a valid unicode code point
+number. You may need to validate your string data manually using test
+code to see how JavaScript will interpret it. Also consider that your
+data may have become corrupted, or the escape sequence has not been
+generated correctly.`,invalid_ascii:`
+The escape sequence {src} does not encode a valid ASCII character. You
+may need to validate your string data manually using test code to see
+how JavaScript will interpret it. Also consider that your data may
+have become corrupted, or the escape sequence has not been generated
+correctly.`,unprintable:`
+String values cannot contain unprintable characters (character codes
+below 32). The character {src} is unprintable. You may need to remove
+these characters from your source data. Also check that it has not
+become corrupted.`,unterminated_string:`
+This string has no end quote.`,unterminated_comment:`
+This comment is never closed.`,unknown_rule:`
+No rule named $rulename is defined. This is probably an error in the
+grammar of a plugin.`,end_of_source:`
+Unexpected end of source.`},lex:{match:{match:{order:1e6,make:z.makeMatchMatcher},fixed:{order:2e6,make:z.makeFixedMatcher},space:{order:3e6,make:z.makeSpaceMatcher},line:{order:4e6,make:z.makeLineMatcher},string:{order:5e6,make:z.makeStringMatcher},comment:{order:6e6,make:z.makeCommentMatcher},number:{order:7e6,make:z.makeNumberMatcher},text:{order:8e6,make:z.makeTextMatcher}},empty:!0,emptyResult:void 0},parse:{prepare:{}},rule:{start:"val",finish:!0,maxmul:3,include:"",exclude:""},result:{fail:[]},config:{modify:{}},parser:{start:void 0}};Ee.defaults=Xt});var Et=V(G=>{"use strict";Object.defineProperty(G,"__esModule",{value:!0});G.makeRuleSpec=G.makeNoRule=G.makeRule=void 0;var w=re(),J=fe(),nt=class{constructor(n,e,i){this.i=-1,this.name=w.EMPTY,this.node=null,this.state=w.OPEN,this.n=Object.create(null),this.d=-1,this.u=Object.create(null),this.k=Object.create(null),this.bo=!1,this.ao=!1,this.bc=!1,this.ac=!1,this.os=0,this.cs=0,this.need=0,this.i=e.uI++,this.name=n.name,this.spec=n,this.child=e.NORULE,this.parent=e.NORULE,this.prev=e.NORULE,this.o0=e.NOTOKEN,this.o1=e.NOTOKEN,this.c0=e.NOTOKEN,this.c1=e.NOTOKEN,this.node=i,this.d=e.rsI,this.bo=n.def.bo!=null,this.ao=n.def.ao!=null,this.bc=n.def.bc!=null,this.ac=n.def.ac!=null}process(n,e){return this.spec.process(this,n,e,this.state)}eq(n,e=0){let i=this.n[n];return i==null||i===e}lt(n,e=0){let i=this.n[n];return i==null||i<e}gt(n,e=0){let i=this.n[n];return i==null||i>e}lte(n,e=0){let i=this.n[n];return i==null||i<=e}gte(n,e=0){let i=this.n[n];return i==null||i>=e}toString(){return"[Rule "+this.name+"~"+this.i+"]"}},Me=(...t)=>new nt(...t);G.makeRule=Me;var Qt=t=>Me(_t(t.cfg,{}),t);G.makeNoRule=Qt;var rt=class{constructor(){this.p=w.EMPTY,this.r=w.EMPTY,this.b=0}},St=(...t)=>new rt(...t),en=St(),tn=St(),it=class{constructor(n,e){this.name=w.EMPTY,this.def={open:[],close:[],bo:[],bc:[],ao:[],ac:[],tcol:[]},this.cfg=n,this.def=Object.assign(this.def,e),this.def.open=(this.def.open||[]).filter(i=>i!=null),this.def.close=(this.def.close||[]).filter(i=>i!=null);for(let i of[...this.def.open,...this.def.close])Oe(i)}tin(n){return(0,J.tokenize)(n,this.cfg)}add(n,e,i){let l=i?.append?"push":"unshift",r=((0,J.isarr)(e)?e:[e]).filter(o=>o!=null&&typeof o=="object").map(o=>Oe(o)),s=n==="o"?"open":"close",u=this.def[s];return u[l](...r),u=this.def[s]=(0,J.modlist)(u,i),(0,J.filterRules)(this,this.cfg),this.norm(),this}open(n,e){return this.add("o",n,e)}close(n,e){return this.add("c",n,e)}action(n,e,i,l){let r=this.def[e+i];return n?r.push(l):r.unshift(l),this}bo(n,e){return this.action(e?!!n:!0,w.BEFORE,w.OPEN,e||n)}ao(n,e){return this.action(e?!!n:!0,w.AFTER,w.OPEN,e||n)}bc(n,e){return this.action(e?!!n:!0,w.BEFORE,w.CLOSE,e||n)}ac(n,e){return this.action(e?!!n:!0,w.AFTER,w.CLOSE,e||n)}clear(){return this.def.open.length=0,this.def.close.length=0,this.def.bo.length=0,this.def.ao.length=0,this.def.bc.length=0,this.def.ac.length=0,this}norm(){this.def.open.map(i=>Oe(i)),this.def.close.map(i=>Oe(i));let n=[];this.def.open.reduce(...e(0,0,n)),this.def.open.reduce(...e(0,1,n)),this.def.close.reduce(...e(1,0,n)),this.def.close.reduce(...e(1,1,n)),this.def.tcol=n;function e(i,l,r){r[i]=r[i]||[];let s=r[i][l]=r[i][l]||[];return[function(u,o){if(o.s&&o.s[l]){let a=[...new Set(u.concat(o.s[l]))];u.length=0,u.push(...a)}return u},s]}return this}process(n,e,i,l){e.log&&e.log(J.S.rule,e,n,i);let r=l==="o",s=r?n:e.NORULE,u=r?"O":"C",o=this.def,a=r?o.open:o.close,m=r?n.bo?o.bo:null:n.bc?o.bc:null;if(m){let h;for(let k=0;k<m.length;k++)if(h=m[k].call(this,n,e,s,h),h?.isToken&&h?.err)return this.bad(h,n,e,{is_open:r})}let d=0<a.length?nn(r,a,i,n,e):tn;if(d.h&&(d=d.h(n,e,d,s)||d,u+="H"),d.e)return this.bad(d.e,n,e,{is_open:r});if(d.n)for(let h in d.n)n.n[h]=d.n[h]===0?0:(n.n[h]==null?0:n.n[h])+d.n[h];if(d.u&&(n.u=Object.assign(n.u,d.u)),d.k&&(n.k=Object.assign(n.k,d.k)),d.a){u+="A";let h=d.a(n,e,d);if(h&&h.isToken&&h.err)return this.bad(h,n,e,{is_open:r})}if(d.p){e.rs[e.rsI++]=n;let h=e.rsm[d.p];if(h)s=n.child=Me(h,e,n.node),s.parent=n,s.n={...n.n},0<Object.keys(n.k).length&&(s.k={...n.k}),u+="P`"+d.p+"`";else return this.bad(this.unknownRule(e.t0,d.p),n,e,{is_open:r})}else if(d.r){let h=e.rsm[d.r];if(h)s=Me(h,e,n.node),s.parent=n.parent,s.prev=n,s.n={...n.n},0<Object.keys(n.k).length&&(s.k={...n.k}),u+="R`"+d.r+"`";else return this.bad(this.unknownRule(e.t0,d.r),n,e,{is_open:r})}else r||(s=e.rs[--e.rsI]||e.NORULE);let p=r?n.ao?o.ao:null:n.ac?o.ac:null;if(p){let h;for(let k=0;k<p.length;k++)if(h=p[k](n,e,s,h),h?.isToken&&h?.err)return this.bad(h,n,e,{is_open:r})}s.why=u,e.log&&e.log(J.S.node,e,n,i,s),w.OPEN===n.state&&(n.state=w.CLOSE);let g=n[r?"os":"cs"]-(d.b||0);return g===1?(e.v2=e.v1,e.v1=e.t0,e.t0=e.t1,e.t1=e.NOTOKEN):g==2&&(e.v2=e.t1,e.v1=e.t0,e.t0=e.NOTOKEN,e.t1=e.NOTOKEN),s}bad(n,e,i,l){throw new J.JsonicError(n.err||J.S.unexpected,{...n.use,state:l.is_open?J.S.open:J.S.close},n,e,i)}unknownRule(n,e){return n.err="unknown_rule",n.use=n.use||{},n.use.rulename=e,n}},_t=(...t)=>new it(...t);G.makeRuleSpec=_t;function nn(t,n,e,i,l){let r=en;r.b=0,r.p=w.EMPTY,r.r=w.EMPTY,r.n=void 0,r.h=void 0,r.a=void 0,r.u=void 0,r.k=void 0,r.e=void 0;let s=null,u=0,o=l.cfg.t,a=!0,m=1<<o.AA-1,d=l.cfg.tokenSetTins.IGNORE;function p(k,c,f,b){let I;do I=e.next(k,c,f,b),l.tC++;while(d[I.tin]);return I}let g=n.length;for(u=0;u<g;u++){s=n[u];let k=!1,c=!1;if(a=!0,s.S0){let f=(l.t0=l.NOTOKEN!==l.t0?l.t0:l.t0=p(i,s,u,0)).tin;if(k=!0,a=!!(s.S0[f/31|0]&(1<<f%31-1|m)),a&&(c=s.S1!=null,s.S1)){let b=(l.t1=l.NOTOKEN!==l.t1?l.t1:l.t1=p(i,s,u,1)).tin;c=!0,a=!!(s.S1[b/31|0]&(1<<b%31-1|m))}}if(t?(i.o0=k?l.t0:l.NOTOKEN,i.o1=c?l.t1:l.NOTOKEN,i.os=(k?1:0)+(c?1:0)):(i.c0=k?l.t0:l.NOTOKEN,i.c1=c?l.t1:l.NOTOKEN,i.cs=(k?1:0)+(c?1:0)),a&&s.c&&(a=a&&s.c(i,l,r)),a)break;s=null}a||(r.e=l.t0),s&&(r.n=s.n!=null?s.n:r.n,r.h=s.h!=null?s.h:r.h,r.a=s.a!=null?s.a:r.a,r.u=s.u!=null?s.u:r.u,r.k=s.k!=null?s.k:r.k,r.g=s.g!=null?s.g:r.g,r.e=s.e&&s.e(i,l,r)||void 0,r.p=s.p!=null&&s.p!==!1?typeof s.p=="string"?s.p:s.p(i,l,r):r.p,r.r=s.r!=null&&s.r!==!1?typeof s.r=="string"?s.r:s.r(i,l,r):r.r,r.b=s.b!=null&&s.b!==!1?typeof s.b=="number"?s.b:s.b(i,l,r):r.b);let h=u<n.length;return l.log&&l.log(J.S.parse,l,i,e,h,a,u,s,r),r}function Oe(t){if(w.STRING===typeof t.g?t.g=t.g.split(/\s*,\s*/):t.g==null&&(t.g=[]),t.g=t.g.sort(),!t.s||t.s.length===0)t.s=null;else{let n=u=>u.flat().filter(o=>typeof o=="number"),e=(u,o)=>u.filter(a=>31*o<=a&&a<31*(o+1)),i=(u,o)=>u.reduce((a,m)=>1<<m-(31*o+1)|a,0),l=n([t.s[0]]),r=n([t.s[1]]),s=t;s.S0=0<l.length?new Array(Math.max(...l.map(u=>1+u/31|0))).fill(null).map((u,o)=>o).map(u=>i(e(l,u),u)):null,s.S1=0<r.length?new Array(Math.max(...r.map(u=>1+u/31|0))).fill(null).map((u,o)=>o).map(u=>i(e(r,u),u)):null}return t.p||(t.p=null),t.r||(t.r=null),t.b||(t.b=null),t}});var Ot=V(Z=>{"use strict";Object.defineProperty(Z,"__esModule",{value:!0});Z.makeParser=Z.makeRuleSpec=Z.makeRule=void 0;var rn=re(),R=fe(),Ie=de(),ge=Et();Object.defineProperty(Z,"makeRule",{enumerable:!0,get:function(){return ge.makeRule}});Object.defineProperty(Z,"makeRuleSpec",{enumerable:!0,get:function(){return ge.makeRuleSpec}});var lt=class t{constructor(n,e){this.rsm={},this.options=n,this.cfg=e}rule(n,e){if(n==null)return this.rsm;let i=this.rsm[n];if(e===null)delete this.rsm[n];else if(e!==void 0){i=this.rsm[n]=this.rsm[n]||(0,ge.makeRuleSpec)(this.cfg,{}),i=this.rsm[n]=e(this.rsm[n],this)||this.rsm[n],i.name=n;return}return i}start(n,e,i,l){let r,s=(0,Ie.makeToken)("#ZZ",(0,R.tokenize)("#ZZ",this.cfg),void 0,rn.EMPTY,(0,Ie.makePoint)(-1)),u=(0,Ie.makeNoToken)(),o={uI:0,opts:this.options,cfg:this.cfg,meta:i||{},src:()=>n,root:()=>r,plgn:()=>e.internal().plugins,inst:()=>e,rule:{},sub:e.internal().sub,xs:-1,v2:s,v1:s,t0:u,t1:u,tC:-2,kI:-1,rs:[],rsI:0,rsm:this.rsm,log:void 0,F:(0,R.srcfmt)(this.cfg),u:{},NOTOKEN:u,NORULE:{}};o=(0,R.deep)(o,l);let a=(0,ge.makeNoRule)(o);if(o.NORULE=a,o.rule=a,i&&R.S.function===typeof i.log&&(o.log=i.log),this.cfg.parse.prepare.forEach(c=>c(e,o,i)),n===""){if(this.cfg.lex.empty)return this.cfg.lex.emptyResult;throw new R.JsonicError(R.S.unexpected,{src:n},o.t0,a,o)}let m=(0,R.badlex)((0,Ie.makeLex)(o),(0,R.tokenize)("#BD",this.cfg),o),d=this.rsm[this.cfg.rule.start];if(d==null)return;let p=(0,ge.makeRule)(d,o);r=p;let g=2*(0,R.keys)(this.rsm).length*m.src.length*2*o.cfg.rule.maxmul,h=0;for(;a!==p&&h<g;)o.kI=h,o.rule=p,o.log&&o.log("",o.kI+":"),o.sub.rule&&o.sub.rule.map(c=>c(p,o)),p=p.process(o,m),o.log&&o.log(R.S.stack,o,p,m),h++;if(s.tin!==m.next(p).tin)throw new R.JsonicError(R.S.unexpected,{},o.t0,a,o);let k=o.root().node;if(this.cfg.result.fail.includes(k))throw new R.JsonicError(R.S.unexpected,{},o.t0,a,o);return k}clone(n,e){let i=new t(n,e);return i.rsm=Object.keys(this.rsm).reduce((l,r)=>(l[r]=(0,R.filterRules)(this.rsm[r],this.cfg),l),{}),i.norm(),i}norm(){(0,R.values)(this.rsm).map(n=>n.norm())}},ln=(...t)=>new lt(...t);Z.makeParser=ln});var It=V(Te=>{"use strict";Object.defineProperty(Te,"__esModule",{value:!0});Te.grammar=Mt;Te.makeJSON=sn;function Mt(t){let{deep:n}=t.util,{OB:e,CB:i,OS:l,CS:r,CL:s,CA:u,TX:o,ST:a,ZZ:m}=t.token,{VAL:d,KEY:p}=t.tokenSet,g=(c,f)=>{if(!f.cfg.rule.finish)return f.t0.err="end_of_source",f.t0},h=c=>{let f=c.o0,b=a===f.tin||o===f.tin?f.val:f.src;c.u.key=b};t.rule("val",c=>{c.bo(f=>f.node=void 0).open([{s:[e],p:"map",b:1,g:"map,json"},{s:[l],p:"list",b:1,g:"list,json"},{s:[d],g:"val,json"}]).close([{s:[m],g:"end,json"},{b:1,g:"more,json"}]).bc((f,b)=>{f.node=f.node===void 0?f.child.node===void 0?f.os===0?void 0:f.o0.resolveVal(f,b):f.child.node:f.node})}),t.rule("map",c=>{c.bo(f=>{f.node=Object.create(null)}).open([{s:[e,i],b:1,n:{pk:0},g:"map,json"},{s:[e],p:"pair",n:{pk:0},g:"map,json,pair"}]).close([{s:[i],g:"end,json"}])}),t.rule("list",c=>{c.bo(f=>{f.node=[]}).open([{s:[l,r],b:1,g:"list,json"},{s:[l],p:"elem",g:"list,elem,json"}]).close([{s:[r],g:"end,json"}])}),t.rule("pair",c=>{c.open([{s:[p,s],p:"val",u:{pair:!0},a:h,g:"map,pair,key,json"}]).bc((f,b)=>{f.u.pair&&(f.u.prev=f.node[f.u.key],f.node[f.u.key]=f.child.node)}).close([{s:[u],r:"pair",g:"map,pair,json"},{s:[i],b:1,g:"map,pair,json"}])}),t.rule("elem",c=>{c.open([{p:"val",g:"list,elem,val,json"}]).bc(f=>{f.u.done!==!0&&f.node.push(f.child.node)}).close([{s:[u],r:"elem",g:"list,elem,json"},{s:[r],b:1,g:"list,elem,json"}])});let k=(c,f)=>{let b=c.u.key,I=c.child.node,N=c.u.prev;I=I===void 0?null:I,!(c.u.list&&f.cfg.safe.key&&(b==="__proto__"||b==="constructor"))&&(c.node[b]=N==null?I:f.cfg.map.merge?f.cfg.map.merge(N,I,c,f):f.cfg.map.extend?n(N,I):I)};t.rule("val",c=>{c.open([{s:[p,s],c:f=>f.d==0,p:"map",b:2,g:"pair,jsonic,top"},{s:[p,s],p:"map",b:2,n:{pk:1},g:"pair,jsonic"},{s:[d],g:"val,json"},{s:[[i,r]],b:1,c:f=>0<f.d,g:"val,imp,null,jsonic"},{s:[u],c:f=>f.d===0,p:"list",b:1,g:"list,imp,jsonic"},{s:[u],b:1,g:"list,val,imp,null,jsonic"},{s:[m],g:"jsonic"}],{append:!0,delete:[2]}).close([{s:[[i,r]],b:1,g:"val,json,close",e:(f,b)=>f.d===0?b.t0:void 0},{s:[u],c:f=>f.lte("dlist")&&f.lte("dmap"),r:"list",u:{implist:!0},g:"list,val,imp,comma,jsonic"},{c:f=>f.lte("dlist")&&f.lte("dmap"),r:"list",u:{implist:!0},g:"list,val,imp,space,jsonic",b:1},{s:[m],g:"jsonic"}],{append:!0,move:[1,-1]})}),t.rule("map",c=>{c.bo(f=>{f.n.dmap=1+(f.n.dmap?f.n.dmap:0)}).open([{s:[e,m],b:1,e:g,g:"end,jsonic"}]).open([{s:[p,s],p:"pair",b:2,g:"pair,list,val,imp,jsonic"}],{append:!0}).close([{s:[i],c:f=>f.lte("pk"),g:"end,json"},{s:[i],b:1,g:"path,jsonic"},{s:[[u,r,...d]],b:1,g:"end,path,jsonic"},{s:[m],e:g,g:"end,jsonic"}],{append:!0,delete:[0]})}),t.rule("list",c=>{c.bo(f=>{f.n.dlist=1+(f.n.dlist?f.n.dlist:0),f.prev.u.implist&&(f.node.push(f.prev.node),f.prev.node=f.node)}).open({c:f=>f.prev.u.implist,p:"elem"}).open([{s:[u],p:"elem",b:1,g:"list,elem,val,imp,jsonic"},{p:"elem",g:"list,elem.jsonic"}],{append:!0}).close([{s:[m],e:g,g:"end,jsonic"}],{append:!0})}),t.rule("pair",(c,f)=>{c.open([{s:[u],g:"map,pair,comma,jsonic"}],{append:!0}).bc((b,I)=>{b.u.pair&&k(b,I)}).close([{s:[i],c:b=>b.lte("pk"),b:1,g:"map,pair,json"},{s:[u,i],c:b=>b.lte("pk"),b:1,g:"map,pair,comma,jsonic"},{s:[u,m],g:"end,jsonic"},{s:[u],c:b=>b.lte("pk"),r:"pair",g:"map,pair,json"},{s:[u],c:b=>b.lte("dmap",1),r:"pair",g:"map,pair,jsonic"},{s:[p],c:b=>b.lte("dmap",1),r:"pair",b:1,g:"map,pair,imp,jsonic"},{s:[[i,u,r,...p]],c:b=>0<b.n.pk,b:1,g:"map,pair,imp,path,jsonic"},{s:[r],e:b=>b.c0,g:"end,jsonic"},{s:[m],e:g,g:"map,pair,json"},{r:"pair",b:1,g:"map,pair,imp,jsonic"}],{append:!0,delete:[0,1]})}),t.rule("elem",(c,f)=>{c.open([{s:[u,u],b:2,u:{done:!0},a:b=>b.node.push(null),g:"list,elem,imp,null,jsonic"},{s:[u],u:{done:!0},a:b=>b.node.push(null),g:"list,elem,imp,null,jsonic"},{s:[p,s],e:f.cfg.list.property?void 0:(b,I)=>I.t0,p:"val",n:{pk:1,dmap:1},u:{done:!0,pair:!0,list:!0},a:h,g:"elem,pair,jsonic"}]).bc((b,I)=>{b.u.pair===!0&&(b.u.prev=b.node[b.u.key],k(b,I))}).close([{s:[u,[r,m]],b:1,g:"list,elem,comma,jsonic"},{s:[u],r:"elem",g:"list,elem,json"},{s:[r],b:1,g:"list,elem,json"},{s:[m],e:g,g:"list,elem,json"},{s:[i],e:b=>b.c0,g:"end,jsonic"},{r:"elem",b:1,g:"list,elem,imp,jsonic"}],{delete:[-1,-2]})})}function sn(t){let n=t.make({grammar$:!1,text:{lex:!1},number:{hex:!1,oct:!1,bin:!1,sep:null,exclude:/^00+/},string:{chars:'"',multiChars:"",allowUnknown:!1,escape:{v:null}},comment:{lex:!1},map:{extend:!1},lex:{empty:!1},rule:{finish:!1,include:"json"},result:{fail:[void 0,NaN]},tokenSet:{KEY:["#ST",null,null,null]}});return Mt(n),n}});var jt=V((S,st)=>{"use strict";Object.defineProperty(S,"__esModule",{value:!0});S.root=S.S=S.EMPTY=S.AFTER=S.BEFORE=S.CLOSE=S.OPEN=S.makeTextMatcher=S.makeNumberMatcher=S.makeCommentMatcher=S.makeStringMatcher=S.makeLineMatcher=S.makeSpaceMatcher=S.makeFixedMatcher=S.makeParser=S.makeLex=S.makeRuleSpec=S.makeRule=S.makePoint=S.makeToken=S.util=S.JsonicError=S.Jsonic=void 0;S.make=ke;var $=re();Object.defineProperty(S,"OPEN",{enumerable:!0,get:function(){return $.OPEN}});Object.defineProperty(S,"CLOSE",{enumerable:!0,get:function(){return $.CLOSE}});Object.defineProperty(S,"BEFORE",{enumerable:!0,get:function(){return $.BEFORE}});Object.defineProperty(S,"AFTER",{enumerable:!0,get:function(){return $.AFTER}});Object.defineProperty(S,"EMPTY",{enumerable:!0,get:function(){return $.EMPTY}});var _=fe();Object.defineProperty(S,"JsonicError",{enumerable:!0,get:function(){return _.JsonicError}});Object.defineProperty(S,"S",{enumerable:!0,get:function(){return _.S}});var on=yt(),x=de();Object.defineProperty(S,"makePoint",{enumerable:!0,get:function(){return x.makePoint}});Object.defineProperty(S,"makeToken",{enumerable:!0,get:function(){return x.makeToken}});Object.defineProperty(S,"makeLex",{enumerable:!0,get:function(){return x.makeLex}});Object.defineProperty(S,"makeFixedMatcher",{enumerable:!0,get:function(){return x.makeFixedMatcher}});Object.defineProperty(S,"makeSpaceMatcher",{enumerable:!0,get:function(){return x.makeSpaceMatcher}});Object.defineProperty(S,"makeLineMatcher",{enumerable:!0,get:function(){return x.makeLineMatcher}});Object.defineProperty(S,"makeStringMatcher",{enumerable:!0,get:function(){return x.makeStringMatcher}});Object.defineProperty(S,"makeCommentMatcher",{enumerable:!0,get:function(){return x.makeCommentMatcher}});Object.defineProperty(S,"makeNumberMatcher",{enumerable:!0,get:function(){return x.makeNumberMatcher}});Object.defineProperty(S,"makeTextMatcher",{enumerable:!0,get:function(){return x.makeTextMatcher}});var ee=Ot();Object.defineProperty(S,"makeRule",{enumerable:!0,get:function(){return ee.makeRule}});Object.defineProperty(S,"makeRuleSpec",{enumerable:!0,get:function(){return ee.makeRuleSpec}});Object.defineProperty(S,"makeParser",{enumerable:!0,get:function(){return ee.makeParser}});var Tt=It(),ot={tokenize:_.tokenize,srcfmt:_.srcfmt,clone:_.clone,charset:_.charset,trimstk:_.trimstk,makelog:_.makelog,badlex:_.badlex,errsite:_.errsite,errinject:_.errinject,errdesc:_.errdesc,configure:_.configure,parserwrap:_.parserwrap,mesc:_.mesc,escre:_.escre,regexp:_.regexp,prop:_.prop,str:_.str,clean:_.clean,errmsg:_.errmsg,deep:_.deep,omap:_.omap,keys:_.keys,values:_.values,entries:_.entries};S.util=ot;function ke(t,n){let e=!0;if(t==="jsonic")e=!1;else if(t==="json")return(0,Tt.makeJSON)(T);t=typeof t=="string"?{}:t;let i={parser:null,config:null,plugins:[],sub:{lex:void 0,rule:void 0},mark:Math.random()},l=(0,_.deep)({},n?{...n.options}:t?.defaults$===!1?{}:on.defaults,t||{}),r=function(a,m,d){var p;if(_.S.string===typeof a){let g=r.internal();return(!((p=s.parser)===null||p===void 0)&&p.start?(0,_.parserwrap)(s.parser):g.parser).start(a,r,m,d)}return a},s=o=>{if(o!=null&&_.S.object===typeof o){(0,_.deep)(l,o),(0,_.configure)(r,i.config,l);let a=r.internal().parser;i.parser=a.clone(l,i.config)}return{...r.options}},u={token:o=>(0,_.tokenize)(o,i.config,r),tokenSet:o=>(0,_.findTokenSet)(o,i.config),fixed:o=>i.config.fixed.ref[o],options:(0,_.deep)(s,l),config:()=>(0,_.deep)(i.config),parse:r,use:function(a,m){if(_.S.function!==typeof a)throw new Error("Jsonic.use: the first argument must be a function defining a plugin. See https://jsonic.senecajs.org/plugin");let d=a.name.toLowerCase(),p=(0,_.deep)({},a.defaults||{},m||{});r.options({plugin:{[d]:p}});let g=r.options.plugin[d];return r.internal().plugins.push(a),a.options=g,a(r,g)||r},rule:(o,a)=>r.internal().parser.rule(o,a)||r,make:o=>ke(o,r),empty:o=>ke({defaults$:!1,standard$:!1,grammar$:!1,...o||{}}),id:"Jsonic/"+Date.now()+"/"+(""+Math.random()).substring(2,8).padEnd(6,"0")+(s.tag==null?"":"/"+s.tag),toString:()=>u.id,sub:o=>(o.lex&&(i.sub.lex=i.sub.lex||[],i.sub.lex.push(o.lex)),o.rule&&(i.sub.rule=i.sub.rule||[],i.sub.rule.push(o.rule)),r),util:ot};if((0,_.defprop)(u.make,_.S.name,{value:_.S.make}),e?(0,_.assign)(r,u):(0,_.assign)(r,{empty:u.empty,parse:u.parse,sub:u.sub,id:u.id,toString:u.toString}),(0,_.defprop)(r,"internal",{value:()=>i}),n){for(let a in n)r[a]===void 0&&(r[a]=n[a]);r.parent=n;let o=n.internal();i.config=(0,_.deep)({},o.config),(0,_.configure)(r,i.config,l),(0,_.assign)(r.token,i.config.t),i.plugins=[...o.plugins],i.parser=o.parser.clone(l,i.config)}else{let o={...r,...u};i.config=(0,_.configure)(o,void 0,l),i.plugins=[],i.parser=(0,ee.makeParser)(l,i.config),l.grammar$!==!1&&(0,Tt.grammar)(o)}return r}var T;S.root=T;var ut=S.root=T=ke("jsonic");S.Jsonic=ut;T.Jsonic=T;T.JsonicError=_.JsonicError;T.makeLex=x.makeLex;T.makeParser=ee.makeParser;T.makeToken=x.makeToken;T.makePoint=x.makePoint;T.makeRule=ee.makeRule;T.makeRuleSpec=ee.makeRuleSpec;T.makeFixedMatcher=x.makeFixedMatcher;T.makeSpaceMatcher=x.makeSpaceMatcher;T.makeLineMatcher=x.makeLineMatcher;T.makeStringMatcher=x.makeStringMatcher;T.makeCommentMatcher=x.makeCommentMatcher;T.makeNumberMatcher=x.makeNumberMatcher;T.makeTextMatcher=x.makeTextMatcher;T.OPEN=$.OPEN;T.CLOSE=$.CLOSE;T.BEFORE=$.BEFORE;T.AFTER=$.AFTER;T.EMPTY=$.EMPTY;T.util=ot;T.make=ke;T.S=_.S;S.default=ut;typeof st<"u"&&(st.exports=ut)});var{Jsonic:un}=jt(),an=t=>{try{let n=un(t);if(n instanceof Error)throw n;return JSON.stringify(n)}catch(n){throw n}};module.exports=an;
+</file>
+
+<file path="src/salvajson/salvajson.py">
+"""Core functionality for salvaging corrupted JSON files using jsonic."""
+
+from collections.abc import Callable
+from pathlib import Path
+from typing import Final
+
+import orjson
+from pythonmonkey import require, SpiderMonkeyError  # type: ignore
+
+_SALVAJSON_DIR: Final[Path] = Path(__file__).parent.absolute()
+_salvajson_js = require(str(_SALVAJSON_DIR / "salvajson.js"))
+
+
+def salvaj(json_str: str) -> str:
+    """Re-parse potentially corrupted JSON string using jsonic.
+
+    Args:
+        json_str: The JSON string to parse
+
+    Returns:
+        Fixed JSON string that can be parsed by standard JSON parsers
+
+    Raises:
+        pythonmonkey.SpiderMonkeyError: If jsonic fails to parse/fix the string.
+    """
+    return _salvajson_js(json_str)
+
+
+def dumps(
+    obj: dict | list | int | float | str | None,
+    *,
+    skipkeys: bool = False,
+    ensure_ascii: bool = True,
+    check_circular: bool = True,
+    allow_nan: bool = True,
+    cls: type | None = None,
+    indent: int | None = None,
+    separators: tuple[str, str] | None = None,
+    default: Callable | None = None,
+    sort_keys: bool = False,
+    **kw,
+) -> str:
+    """Serialize Python object to JSON string using orjson.
+
+    Args:
+        obj: Python object to serialize
+        skipkeys: Ignored, for compatibility with json.dumps()
+        ensure_ascii: Ignored, for compatibility with json.dumps()
+        check_circular: Ignored, for compatibility with json.dumps()
+        allow_nan: Ignored, for compatibility with json.dumps()
+        cls: Ignored, for compatibility with json.dumps()
+        indent: If not None, pretty-print with 2-space indentation
+        separators: Ignored, for compatibility with json.dumps()
+        default: Ignored, for compatibility with json.dumps()
+        sort_keys: If True, sort dictionary keys
+        **kw: Additional keyword arguments ignored for compatibility
+
+    Returns:
+        JSON string representation of the input object
+    """
+    options = (
+        orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY | orjson.OPT_NON_STR_KEYS
+    )
+    if sort_keys:
+        options |= orjson.OPT_SORT_KEYS
+    if indent is not None:
+        options |= orjson.OPT_INDENT_2
+
+    return orjson.dumps(obj, option=options).decode("utf-8")
+
+
+def loads(
+    s: bytes | str,
+    *,
+    cls: type | None = None,
+    object_hook: Callable | None = None,
+    parse_float: Callable | None = None,
+    parse_int: Callable | None = None,
+    parse_constant: Callable | None = None,
+    object_pairs_hook: Callable | None = None,
+    **kw,
+) -> dict | list | int | float | str | None:
+    """Parse JSON string into Python object, with fallback to jsonic parser.
+
+    Args:
+        s: JSON string or bytes to parse
+        cls: Ignored, for compatibility with json.loads()
+        object_hook: Ignored, for compatibility with json.loads()
+        parse_float: Ignored, for compatibility with json.loads()
+        parse_int: Ignored, for compatibility with json.loads()
+        parse_constant: Ignored, for compatibility with json.loads()
+        object_pairs_hook: Ignored, for compatibility with json.loads()
+        **kw: Additional keyword arguments ignored for compatibility
+
+    Returns:
+        Python object parsed from the JSON input
+
+    Raises:
+        orjson.JSONDecodeError: If parsing fails after attempting fallback.
+        pythonmonkey.SpiderMonkeyError: If the internal jsonic parser fails during fallback.
+    """
+    try:
+        return orjson.loads(s)
+    except orjson.JSONDecodeError:
+        str_input: str
+        if isinstance(s, bytes):
+            str_input = s.decode("utf-8")
+        else:
+            str_input = s
+        return orjson.loads(str(salvaj(str_input)))
+</file>
+
+<file path="tests/data/test.json">
+{
+  "name": "John Doe",
+  "age": 30,
+  "isActive": true,
+  "skills": ["Python", "JavaScript", "SQL",
+  "address": {
+    "street": "123 Main St",
+    "city": "Somewhere"
+    "state": "CA"
+  }
+</file>
+
+<file path="tests/__init__.py">
+"""Test package initialization."""
+</file>
+
+<file path="tests/conftest.py">
+"""Shared pytest fixtures and configuration."""
+
+import pytest
+
+
+@pytest.fixture
+def sample_fixture():
+    """Example fixture that can be used across tests."""
+    return {}
+</file>
+
+<file path="tests/test_salvajson.py">
+"""Tests for salvajson package."""
+
+import json
+import re
+from pathlib import Path
+
+import pytest
+import orjson # For testing loads fallback
+from pythonmonkey import SpiderMonkeyError # Import the specific error
+
+from salvajson import __version__, salvaj, dumps, loads # Import dumps and loads
+from salvajson.__main__ import cli
+
+# Test data
+VALID_JSON = """{"name": "John", "age": 30}"""
+
+CORRUPTED_CASES = [
+    # Missing quotes around property names
+    ("""{name: "John", age: 30}""", """{"name":"John","age":30}"""),
+    # Single quotes instead of double quotes
+    ("""{'name': 'John', 'age': 30}""", """{"name":"John","age":30}"""),
+    # Trailing commas
+    ("""{"name": "John", "age": 30,}""", """{"name":"John","age":30}"""),
+    # Missing commas
+    ("""{"name": "John" "age": 30}""", """{"name":"John","age":30}"""),
+    # Unquoted string values
+    ("""{"name": John, "age": 30}""", """{"name":"John","age":30}"""),
+    # Comments in JSON
+    (
+        """{"name": "John", // This is a comment
+        "age": 30}""",
+        """{"name":"John","age":30}""",
+    ),
+]
+
+# Cases that should raise errors
+ERROR_CASES = [
+    # Reversed braces
+    "}{",
+    # Mismatched brackets
+    "{[}]",
+]
+
+
+@pytest.mark.parametrize("corrupted,expected", CORRUPTED_CASES)
+def test_salvaj_corrupted_json(corrupted: str, expected: str):
+    """Test salvaging various forms of corrupted JSON."""
+    result = salvaj(corrupted)
+    # Verify the result can be parsed as valid JSON
+    parsed = json.loads(result)
+    expected_parsed = json.loads(expected)
+    assert parsed == expected_parsed
+
+
+def test_salvaj_valid_json():
+    """Test that valid JSON passes through unchanged."""
+    result = salvaj(VALID_JSON)
+    assert json.loads(result) == json.loads(VALID_JSON)
+
+
+@pytest.mark.parametrize("invalid_json", ERROR_CASES)
+def test_salvaj_error_cases(invalid_json: str):
+    """Test that appropriate errors are raised for invalid JSON."""
+    # Expect salvaj to raise SpiderMonkeyError directly
+    with pytest.raises(SpiderMonkeyError) as excinfo:
+        salvaj(invalid_json)
+    # Check if the error message contains typical Jsonic error parts.
+    # Jsonic error messages, when wrapped by SpiderMonkeyError, will contain
+    # identifiable substrings.
+    error_message = str(excinfo.value)
+    # Examples from Jsonic: "[jsonic/unexpected]: unexpected character(s): }"
+    # or "[jsonic/unterminated]: unterminated string"
+    assert "[jsonic/" in error_message or "SyntaxError:" in error_message
+
+
+def test_cli_with_file(tmp_path: Path):
+    """Test CLI functionality with a file input."""
+    # Create a test file
+    test_file = tmp_path / "test.json"
+    test_file.write_text(CORRUPTED_CASES[0][0])
+
+    # Test CLI
+    result = cli(str(test_file))
+    assert json.loads(result) == json.loads(CORRUPTED_CASES[0][1])
+
+
+def test_cli_file_not_found():
+    """Test CLI handles missing files appropriately."""
+    with pytest.raises(FileNotFoundError):
+        cli("nonexistent.json")
+
+
+def test_cli_with_invalid_json(tmp_path: Path):
+    """Test CLI with invalid JSON file."""
+    test_file = tmp_path / "invalid.json"
+    test_file.write_text(ERROR_CASES[0])
+
+    with pytest.raises(SpiderMonkeyError) as excinfo:
+        cli(str(test_file))
+    # Check if the error message contains typical Jsonic error parts.
+    error_message = str(excinfo.value)
+    # Examples from Jsonic: "[jsonic/unexpected]: unexpected character(s): }"
+    # or "[jsonic/unterminated]: unterminated string"
+    assert "[jsonic/" in error_message or "SyntaxError:" in error_message
+
+
+def test_version():
+    """Test that version is properly formatted."""
+    assert isinstance(__version__, str)
+    assert re.match(r"^\d+\.\d+\.\d+$", __version__), (
+        "Version should be in format X.Y.Z"
+    )
+
+
+# Tests for salvajson.dumps
+def test_dumps_basic():
+    """Test basic serialization with dumps."""
+    data = {"name": "Alice", "age": 30}
+    expected_json = """{"name":"Alice","age":30}"""
+    assert json.loads(dumps(data)) == json.loads(expected_json)
+
+def test_dumps_with_indent():
+    """Test dumps with indentation."""
+    data = {"name": "Bob", "age": 25}
+    # orjson.OPT_INDENT_2 produces two spaces
+    expected_json = """{\n  "name": "Bob",\n  "age": 25\n}"""
+    assert dumps(data, indent=2) == expected_json
+
+def test_dumps_with_sort_keys():
+    """Test dumps with sorted keys."""
+    data = {"b": 1, "a": 2, "c": {"z": 0, "x": 1}}
+    # Note: orjson sorts keys at all levels
+    expected_json_sorted = """{"a":2,"b":1,"c":{"x":1,"z":0}}"""
+    # With indent to make it easier to visually compare if needed, and also test together
+    expected_json_sorted_indented = """{\n  "a": 2,\n  "b": 1,\n  "c": {\n    "x": 1,\n    "z": 0\n  }\n}"""
+    assert json.loads(dumps(data, sort_keys=True)) == json.loads(expected_json_sorted)
+    assert dumps(data, sort_keys=True, indent=2) == expected_json_sorted_indented
+
+def test_dumps_compatibility_params():
+    """Test that dumps ignores unhandled standard json.dumps params."""
+    data = {"key": "value"}
+    # These params are listed as ignored in the docstring
+    assert dumps(data, skipkeys=True, ensure_ascii=False, check_circular=False, allow_nan=False, cls=None, separators=(',',':'), default=None) == """{"key":"value"}"""
+
+# Placeholder for numpy/datetime tests if numpy/datetime objects are easily available
+# import numpy as np
+# from datetime import datetime, timezone
+# def test_dumps_numpy_datetime():
+#     """Test dumps with numpy array and datetime object."""
+#     data = {
+#         "array": np.array([1, 2, 3]),
+#         "timestamp": datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+#     }
+#     expected_json = """{"array":[1,2,3],"timestamp":"2023-01-01T12:00:00Z"}"""
+#     # This requires numpy to be installed. If it's not a direct dependency,
+#     # this test might need to be conditional or numpy added to test deps.
+#     # For now, will assume orjson handles it if the options are passed.
+#     # The key is that options OPT_SERIALIZE_NUMPY and OPT_NAIVE_UTC are used.
+#     # We can't directly verify the output without these libs.
+#     # A simpler check is that it doesn't FAIL with these options set by default.
+#     # For now, this test will be commented out unless numpy is added to test deps.
+#     pass
+
+
+# Tests for salvajson.loads
+def test_loads_valid_json():
+    """Test loads with valid JSON string and bytes."""
+    valid_json_str = """{"name": "Charlie", "score": 100}"""
+    valid_json_bytes = valid_json_str.encode('utf-8')
+    expected_data = {"name": "Charlie", "score": 100}
+
+    assert loads(valid_json_str) == expected_data
+    assert loads(valid_json_bytes) == expected_data
+
+def test_loads_corrupted_json_fallback():
+    """Test loads fallback mechanism for corrupted JSON."""
+    # This JSON is one of the CORRUPTED_CASES that salvaj can fix
+    corrupted_json_str = """{name: "David", 'details': [1 2]}"""
+    # Expected after salvaj fixes it and orjson parses that
+    expected_data_after_salvaj = {"name": "David", "details": [1, 2]}
+
+    # orjson alone would fail on this
+    with pytest.raises(orjson.JSONDecodeError):
+        orjson.loads(corrupted_json_str)
+
+    # salvajson.loads should fix it using salvaj and then parse
+    assert loads(corrupted_json_str) == expected_data_after_salvaj
+
+    # Test with bytes input as well
+    corrupted_json_bytes = corrupted_json_str.encode('utf-8')
+    assert loads(corrupted_json_bytes) == expected_data_after_salvaj
+
+
+def test_loads_error_case_after_fallback():
+    """Test loads with JSON so corrupted that even salvaj fails."""
+    # This JSON is one of the ERROR_CASES
+    very_corrupted_json_str = ERROR_CASES[0] # e.g., "}{"
+
+    # Expect SpiderMonkeyError as salvaj will be called and fail
+    with pytest.raises(SpiderMonkeyError) as excinfo:
+        loads(very_corrupted_json_str)
+
+    error_message = str(excinfo.value)
+    assert "[jsonic/" in error_message or "SyntaxError:" in error_message
+
+    # Test with bytes input as well
+    very_corrupted_json_bytes = very_corrupted_json_str.encode('utf-8')
+    with pytest.raises(SpiderMonkeyError) as excinfo_bytes:
+        loads(very_corrupted_json_bytes)
+
+    error_message_bytes = str(excinfo_bytes.value)
+    assert "[jsonic/" in error_message_bytes or "SyntaxError:" in error_message_bytes
+
+
+def test_loads_compatibility_params():
+    """Test that loads ignores unhandled standard json.loads params."""
+    valid_json_str = """{"key": "value"}"""
+    expected_data = {"key": "value"}
+    # These params are listed as ignored in the docstring
+    assert loads(valid_json_str, cls=None, object_hook=None, parse_float=None, parse_int=None, parse_constant=None, object_pairs_hook=None) == expected_data
+</file>
+
+<file path=".coveragerc">
+# .coveragerc to control coverage.py
+[run]
+branch = True
+source = salvajson
+# omit = bad_file.py
+
+[paths]
+source =
+    src/
+    */site-packages/
+
+[report]
+# Regexes for lines to exclude from consideration
+exclude_lines =
+    # Have to re-enable the standard pragma
+    pragma: no cover
+
+    # Don't complain about missing debug-only code:
+    def __repr__
+    if self\.debug
+
+    # Don't complain if tests don't hit defensive assertion code:
+    raise AssertionError
+    raise NotImplementedError
+
+    # Don't complain if non-runnable code isn't run:
+    if 0:
+    if __name__ == .__main__.:
+</file>
+
+<file path=".gitignore">
+__pycache__/*
+__pypackages__/
+._*
+.*.swp
+.apdisk
+.AppleDB
+.AppleDesktop
+.AppleDouble
+.cache
+.cache/
+.cache/*
+.com.apple.timemachine.donotpresent
+.conda*/
+.coverage
+.coverage.*
+.dmypy.json
+.DocumentRevisions-V100
+.docusaurus
+.DS_Store
+.dynamodb/
+.eggs/
+.env
+.env.development.local
+.env.local
+.env.production.local
+.env.test.local
+.eslintcache
+.fseventsd
+.fusebox/
+.grunt
+.hypothesis/
+.idea
+.idea/
+.installed.cfg
+.ipynb_checkpoints
+.lock-wscript
+.LSOverride
+.mypy_cache/
+.next
+.next/
+.node_repl_history
+.nox/
+.npm
+.nuxt
+.nuxt/
+.nyc_output
+.parcel-cache
+.pdm-build/
+.pdm-python
+.pdm.toml
+.pnp.*
+.pnpm-debug.log*
+.project
+.pybuilder/
+.pydevproject
+.pypirc
+.pyre/
+.pytest_cache/
+.Python
+.python-version
+.pytype/
+.ropeproject
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+.ruff_cache/
+.scrapy
+.serverless/
+.settings
+.Spotlight-V100
+.spyderproject
+.spyproject
+.stylelintcache
+.temp
+.TemporaryItems
+.tern-port
+.tox
+.tox/
+.Trashes
+.venv
+.venv*/
+.VolumeIcon.icns
+.vscode
+.vscode-test
+.vuepress/dist
+.webassets-cache
+.yarn-integrity
+.yarn/build-state.yml
+.yarn/cache
+.yarn/install-state.gz
+.yarn/unplugged
+*.cfg
+*.cover
+*.egg
+*.egg-info
+*.egg-info/
+*.eggs/
+*.lcov
+*.log
+*.manifest
+*.mo
+*.orig
+*.pid
+*.pid.lock
+*.pot
+*.py,cover
+*.py[cod]
+*.sage.py
+*.seed
+*.so
+*.spec
+*.tgz
+*.tsbuildinfo
+**/.vitepress/cache
+**/.vitepress/dist
+*/.ipynb_checkpoints/*
+*~
+*$py.class
+/site
+bower_components
+build/
+build/*
+build/Release
+celerybeat-schedule
+celerybeat.pid
+cover/
+cover/*
+coverage
+coverage.xml
+coverage/
+cython_debug/
+db.sqlite3
+db.sqlite3-journal
+develop-eggs/
+dist
+dist/
+dist/*
+dmypy.json
+docs/_build/
+docs/_build/*
+docs/_rst/*
+docs/api/*
+downloads/
+eggs/
+env.bak/
+env/
+ENV/
+htmlcov/
+htmlcov/*
+Icon
+instance/
+ipython_config.py
+jspm_packages/
+junit*.xml
+lerna-debug.log*
+lib-cov
+lib/
+lib64/
+local_settings.py
+logs
+MANIFEST
+Network Trash Folder
+node_modules/
+nosetests.xml
+npm-debug.log*
+out
+parts/
+pdm.lock
+pids
+pip-delete-this-directory.txt
+pip-log.txt
+Pipfile.lock
+poetry.lock
+profile_default/
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+sdist/
+sdist/*
+share/python-wheels/
+tags
+target/
+Temporary Items
+uv.lock
+var/
+venv.bak/
+venv/
+web_modules/
+wheels/
+yarn-debug.log*
+yarn-error.log*
+</file>
+
+<file path=".pre-commit-config.yaml">
+exclude: '^docs/conf.py'
+repos:
+  - repo: local
+    hooks:
+      - id: placeholder
+        name: placeholder
+        entry: echo "No hooks configured yet"
+        language: system
+        pass_filenames: false
+</file>
+
+<file path="AUTHORS.md">
+# Contributors
+
+- Adam Twardoch <adam+github@twardoch.com>
+- Anthropic Claude
+</file>
+
+<file path="build.py">
+"""Build script for salvajson package."""
+
+import subprocess
+from pathlib import Path
+
+from hatchling.builders.hooks.plugin.interface import BuildHookInterface
+
+
+def get_version_from_git_tag() -> str:
+    """Extract version from the latest git tag.
+
+    Returns:
+        str: Version string from git tag, or "0.0.0" if not available
+    """
+    try:
+        # Get the latest tag that starts with 'v'
+        tag = subprocess.check_output(
+            ["git", "describe", "--tags", "--abbrev=0"],
+            text=True,
+            stderr=subprocess.DEVNULL,  # Suppress stderr
+        ).strip()
+
+        # Remove the 'v' prefix if present and return
+        return tag[1:] if tag.startswith("v") else tag
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return "0.0.0"
+
+
+# This variable is required by Hatch for version detection
+VERSION = get_version_from_git_tag()
+
+
+class CustomBuildHook(BuildHookInterface):
+    """Custom build hook for hatchling."""
+
+    def initialize(self, version: str, build_data: dict) -> None:
+        """Initialize the build process.
+
+        Args:
+            version: The version of the build
+            build_data: Build configuration data
+        """
+        super().initialize(version, build_data)
+
+        # Build JS for both sdist and wheel
+        root_dir = Path(self.root)
+        js_src_dir = root_dir / "js_src"
+        pkg_dir = root_dir / "src" / "salvajson"
+
+        # Create package directory if it doesn't exist
+        pkg_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build JS bundle
+        build_js_bundle(js_src_dir, pkg_dir)
+
+
+def build_js_bundle(js_src_dir: Path, pkg_dir: Path) -> None:
+    """Build the JavaScript bundle.
+
+    Args:
+        js_src_dir: Directory containing JavaScript source files
+        pkg_dir: Directory where the bundle should be placed
+
+    Raises:
+        subprocess.CalledProcessError: If npm build fails
+        RuntimeError: If bundle is not created in correct location
+    """
+    # Ensure node_modules exists
+    if not (js_src_dir / "node_modules").exists():
+        subprocess.run(["npm", "ci"], cwd=js_src_dir, check=True)
+
+    # Build the bundle
+    subprocess.run(["npm", "run", "build"], cwd=js_src_dir, check=True)
+
+    # Verify bundle exists in correct location
+    bundle_path = pkg_dir / "salvajson.js"
+    if not bundle_path.exists():
+        msg = f"JS bundle not found at expected location: {bundle_path}"
+        raise RuntimeError(msg)
+
+
+if __name__ == "__main__":
+    # For manual builds
+    root_dir = Path(__file__).parent
+    js_src_dir = root_dir / "js_src"
+    pkg_dir = root_dir / "src" / "salvajson"
+
+    # Ensure package directory exists
+    pkg_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build JS bundle
+    build_js_bundle(js_src_dir, pkg_dir)
+
+    print("JavaScript bundle built successfully!")
+</file>
+
+<file path="CHANGELOG.md">
+# Changelog
+
+## Version 0.1 (development)
+
+- Feature A added
+- FIX: nasty bug #1729 fixed
+- add your changes here!
+</file>
+
+<file path="LICENSE">
+Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   1. Definitions.
+
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
+
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
+
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity. For the purposes of this definition,
+      "control" means (i) the power, direct or indirect, to cause the
+      direction or management of such entity, whether by contract or
+      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+      outstanding shares, or (iii) beneficial ownership of such entity.
+
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
+
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
+
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
+
+      "Work" shall mean the work of authorship, whether in Source or
+      Object form, made available under the License, as indicated by a
+      copyright notice that is included in or attached to the work
+      (an example is provided in the Appendix below).
+
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other modifications
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
+
+      "Contribution" shall mean any work of authorship, including
+      the original version of the Work and any modifications or additions
+      to that Work or Derivative Works thereof, that is intentionally
+      submitted to Licensor for inclusion in the Work by the copyright owner
+      or by an individual or Legal Entity authorized to submit on behalf of
+      the copyright owner. For the purposes of this definition, "submitted"
+      means any form of electronic, verbal, or written communication sent
+      to the Licensor or its representatives, including but not limited to
+      communication on electronic mailing lists, source code control systems,
+      and issue tracking systems that are managed by, or on behalf of, the
+      Licensor for the purpose of discussing and improving the Work, but
+      excluding communication that is conspicuously marked or otherwise
+      designated in writing by the copyright owner as "Not a Contribution."
+
+      "Contributor" shall mean Licensor and any individual or Legal Entity
+      on behalf of whom a Contribution has been received by Licensor and
+      subsequently incorporated within the Work.
+
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      copyright license to reproduce, prepare Derivative Works of,
+      publicly display, publicly perform, sublicense, and distribute the
+      Work and such Derivative Works in Source or Object form.
+
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      (except as stated in this section) patent license to make, have made,
+      use, offer to sell, sell, import, and otherwise transfer the Work,
+      where such license applies only to those patent claims licensable
+      by such Contributor that are necessarily infringed by their
+      Contribution(s) alone or by combination of their Contribution(s)
+      with the Work to which such Contribution(s) was submitted. If You
+      institute patent litigation against any entity (including a
+      cross-claim or counterclaim in a lawsuit) alleging that the Work
+      or a Contribution incorporated within the Work constitutes direct
+      or contributory patent infringement, then any patent licenses
+      granted to You under this License for that Work shall terminate
+      as of the date such litigation is filed.
+
+   4. Redistribution. You may reproduce and distribute copies of the
+      Work or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You
+      meet the following conditions:
+
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
+
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
+
+      (c) You must retain, in the Source form of any Derivative Works
+          that You distribute, all copyright, patent, trademark, and
+          attribution notices from the Source form of the Work,
+          excluding those notices that do not pertain to any part of
+          the Derivative Works; and
+
+      (d) If the Work includes a "NOTICE" text file as part of its
+          distribution, then any Derivative Works that You distribute must
+          include a readable copy of the attribution notices contained
+          within such NOTICE file, excluding those notices that do not
+          pertain to any part of the Derivative Works, in at least one
+          of the following places: within a NOTICE text file distributed
+          as part of the Derivative Works; within the Source form or
+          documentation, if provided along with the Derivative Works; or,
+          within a display generated by the Derivative Works, if and
+          wherever such third-party notices normally appear. The contents
+          of the NOTICE file are for informational purposes only and
+          do not modify the License. You may add Your own attribution
+          notices within Derivative Works that You distribute, alongside
+          or as an addendum to the NOTICE text from the Work, provided
+          that such additional attribution notices cannot be construed
+          as modifying the License.
+
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
+
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution intentionally submitted for inclusion in the Work
+      by You to the Licensor shall be under the terms and conditions of
+      this License, without any additional terms or conditions.
+      Notwithstanding the above, nothing herein shall supersede or modify
+      the terms of any separate license agreement you may have executed
+      with Licensor regarding such Contributions.
+
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for reasonable and customary use in describing the
+      origin of the Work and reproducing the content of the NOTICE file.
+
+   7. Disclaimer of Warranty. Unless required by applicable law or
+      agreed to in writing, Licensor provides the Work (and each
+      Contributor provides its Contributions) on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+      implied, including, without limitation, any warranties or conditions
+      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+      PARTICULAR PURPOSE. You are solely responsible for determining the
+      appropriateness of using or redistributing the Work and assume any
+      risks associated with Your exercise of permissions under this License.
+
+   8. Limitation of Liability. In no event and under no legal theory,
+      whether in tort (including negligence), contract, or otherwise,
+      unless required by applicable law (such as deliberate and grossly
+      negligent acts) or agreed to in writing, shall any Contributor be
+      liable to You for damages, including any direct, indirect, special,
+      incidental, or consequential damages of any character arising as a
+      result of this License or out of the use or inability to use the
+      Work (including but not limited to damages for loss of goodwill,
+      work stoppage, computer failure or malfunction, or any and all
+      other commercial damages or losses), even if such Contributor
+      has been advised of the possibility of such damages.
+
+   9. Accepting Warranty or Additional Liability. While redistributing
+      the Work or Derivative Works thereof, You may choose to offer,
+      and charge a fee for, acceptance of support, warranty, indemnity,
+      or other liability obligations and/or rights consistent with this
+      License. However, in accepting such obligations, You may act only
+      on Your own behalf and on Your sole responsibility, not on behalf
+      of any other Contributor, and only if You agree to indemnify,
+      defend, and hold each Contributor harmless for any liability
+      incurred by, or claims asserted against, such Contributor by reason
+      of your accepting any such warranty or additional liability.
+
+   END OF TERMS AND CONDITIONS
+
+   APPENDIX: How to apply the Apache License to your work.
+
+      To apply the Apache License to your work, attach the following
+      boilerplate notice, with the fields enclosed by brackets "[]"
+      replaced with your own identifying information. (Don't include
+      the brackets!)  The text should be enclosed in the appropriate
+      comment syntax for the file format. We also recommend that a
+      file or class name and description of purpose be included on the
+      same "printed page" as the copyright notice for easier
+      identification within third-party archives.
+
+   Copyright [yyyy] [name of copyright owner]
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+</file>
+
+<file path="pyproject.toml">
+[build-system]
+requires = ["hatchling>=1.18.0", "python-semantic-release>=8.7.0", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "salvajson"
+dynamic = ["version"]
+description = "Fix corrupted JSON files using the jsonic JSON parser in JavaScript"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+dependencies = [
+    "pythonmonkey>=1.1.0",
+    "fire>=0.7.0",
+    "orjson>=3.10",
+]
+authors = [
+    {name = "Adam Twardoch", email = "adam+github@twardoch.com"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+dynamic = ["version"]
+
+
+[tool.hatch.version]
+source = "vcs"
+vcs_opts = { "tag_prefix" = "v" }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/salvajson"]
+artifacts = ["src/salvajson/salvajson.js"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/salvajson",
+    "js_src",
+    "build.py",
+    "README.md",
+    "pyproject.toml"
+]
+
+[tool.hatch.build.hooks.custom]
+path = "build.py"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-sugar>=1.0.0",
+    "pytest-xdist>=3.6.0",
+    "pytest-timeout>=2.3.0",
+    "coverage>=6.0.0",
+]
+dev = [
+    "build>=1.0.0",
+    "hatchling>=1.18.0",
+    "twine>=4.0.0",
+    "python-semantic-release>=8.7.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --cov=src --cov-report=term-missing --cov-fail-under=80"
+filterwarnings = [
+    "ignore::pytest.PytestAssertRewriteWarning",
+    "ignore::pytest.PytestConfigWarning"
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*", "setup.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "pass",
+    "raise ImportError",
+]
+</file>
+
+<file path="pytest.ini">
+[pytest]
+testpaths = tests
+python_files = test_*.py
+python_classes = Test*
+python_functions = test_*
+addopts =
+    -v
+    --cov=src
+    --cov-report=term-missing
+    -p no:briefcase
+    -p no:xdist
+</file>
+
+<file path="README.md">
+# SalvaJSON
+
+[`salvajson`](https://github.com/twardoch/salvajson) is a Python package for fixing corrupted JSON files using. It uses the lenient [`jsonic`](https://github.com/rjrodger/jsonic) parser and the [`pythonmonkey`](https://github.com/Distributive-Network/PythonMonkey) Python-JS bridge.
+
+- Seamlessly corrects invalid JSON from LLMs, APIs, and other sources
+- Handles missing/single quotes, trailing commas, missing commas, unquoted strings, JSON comments, and more
+- Simple Python API and command-line interface
+
+## Installation
+
+```bash
+uv pip install --system salvajson
+```
+
+### Requirements
+
+- Python 3.10 or higher
+- PythonMonkey 1.1.0 or higher (automatically installed)
+
+## Usage
+
+### Python API
+
+```python
+from salvajson import salvaj
+
+# Fix a corrupted JSON string
+corrupted_json = """{
+    name: "John",
+    age: 30,
+    'hobbies': ['reading' 'coding'],
+}"""
+
+fixed_json = salvaj(corrupted_json)
+print(fixed_json)
+```
+
+The package provides three main functions:
+
+#### `salvaj(json_str: str) -> str`
+
+Fixes corrupted JSON strings using the lenient jsonic parser. This is the core function that handles:
+- Missing or single quotes
+- Trailing commas
+- Missing commas
+- Unquoted property names
+- JSON comments
+- And more syntax issues
+
+#### `dumps(obj, *, indent=None, sort_keys=False, **kw) -> str`
+
+High-performance JSON serialization using orjson:
+- Faster than the standard json.dumps()
+- Compatible with json.dumps() parameters
+- Supports pretty-printing with indent=2
+- Optional key sorting with sort_keys=True
+- Handles numpy arrays and UTC datetimes
+- Non-string dictionary keys are converted to strings
+
+```python
+from salvajson import dumps
+
+data = {"b": 2, "a": 1}
+# Pretty-printed with sorted keys
+print(dumps(data, indent=2, sort_keys=True))
+```
+
+#### `loads(s: bytes | str, **kw) -> Any`
+
+High-performance JSON parsing with automatic corruption recovery:
+- Uses orjson for fast parsing
+- Falls back to jsonic (salvaj) if standard parsing fails
+- Compatible with json.loads() parameters
+- Accepts both string and bytes input
+- Returns Python objects (dict, list, str, int, float, None)
+
+```python
+from salvajson import loads
+
+# Standard JSON parsing
+valid_json = '{"name": "John", "age": 30}'
+data = loads(valid_json)
+
+# Automatic recovery of corrupted JSON
+corrupted_json = '{name: John, age: 30}'
+data = loads(corrupted_json)  # Still works!
+```
+
+### Command Line Interface
+
+Salvajson comes with a CLI for processing JSON files directly:
+
+```bash
+# Process a single file
+python -m salvajson path/to/corrupted.json
+
+# Process and save to a new file
+python -m salvajson input.json > output.json
+```
+
+## Development
+
+### Setup Development Environment
+
+1. Clone the repository:
+
+```bash
+git clone https://github.com/twardoch/salvajson.git; cd salvajson
+```
+
+2. Install development dependencies:
+
+```bash
+uv venv && source .venv/bin/activate; uv pip install -e ".[dev,test]"
+```
+
+3. Install JavaScript dependencies:
+```bash
+cd js_src; npm install
+```
+
+### Project Structure
+
+```
+salvajson/
+├── src/
+│   └── salvajson/
+│       ├── __init__.py      # Main package interface
+│       └── salvajson.js     # Bundled JavaScript code
+├── js_src/
+│   ├── package.json     # JavaScript dependencies
+│   └── index.js         # JavaScript source
+├── tests/
+│   └── test_salvajson.py
+├── build.py             # Build script
+└── pyproject.toml       # Python package configuration
+```
+
+### Building
+
+The project uses `hatchling` as its build backend. The `build.py` script handles bundling the JavaScript code before package building.
+
+```bash
+python build.py
+pip install -e .
+```
+
+## How It Works
+
+Salvajson uses PythonMonkey to create a bridge between Python and JavaScript, allowing it to leverage the powerful jsonic parser. When you pass a JSON string to `salvaj()`:
+
+1. The string is passed to the JavaScript runtime.
+2. `jsonic` attempts to parse and fix the JSON.
+3. If successful, the fixed JSON is returned to Python as a string.
+4. If `jsonic` encounters an error it cannot recover from, this error is propagated to Python as a `pythonmonkey.SpiderMonkeyError`.
+
+## License
+
+Apache License 2.0 - see LICENSE file for details.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Credits
+
+- **Adam Twardoch** [@twardoch](https://github.com/twardoch)
+- **Anthropic Claude**
+- [jsonic](https://github.com/rjrodger/jsonic) - The lenient JSON parser in JavaScript
+- [PythonMonkey](https://github.com/Distributive-Network/PythonMonkey) - Python-JavaScript bridge
+
+## Rationale
+
+This project serves as an exercise demonstrating how to effectively bridge Python and JavaScript ecosystems. It showcases:
+
+- Integration of mature JavaScript libraries into Python applications using PythonMonkey
+- Clean architecture for JavaScript-Python interoperability
+- Proper packaging of JavaScript dependencies within a Python package
+- Modern build system configuration using hatchling and esbuild
+- Automated workflows for dependency management and publishing
+
+While the project solves a specific problem (fixing malformed JSON), its architecture and build setup can be adapted for integrating other JavaScript libraries into Python projects.
+
+## About the `jsonic` lenient JSON parser
+
+[`jsonic`](https://github.com/rjrodger/jsonic) is a JavaScript library that provides a more lenient and extensible JSON parser. Unlike the standard `JSON.parse`, `jsonic` allows for a more flexible syntax, making it easier to work with human-written JSON-like data. This article provides a detailed technical overview of how `jsonic` works, exploring its architecture, parsing process, and extensibility features.
+
+### Core Architecture
+
+At its core, `jsonic` is built around two primary components:
+
+1. **Lexer (Tokenizer):** The lexer's role is to break down the input string into a stream of tokens. Each token represents a meaningful unit of the input, such as a string, number, keyword, or punctuation. The lexer in `jsonic` is highly configurable, allowing users to define custom token types and matching rules.
+
+2. **Parser:** The parser takes the token stream generated by the lexer and constructs an Abstract Syntax Tree (AST) based on a predefined grammar. This grammar defines the rules of the `jsonic` syntax, including how tokens can be combined to form valid JSON structures.
+
+The parser utilizes a recursive descent parsing strategy. This approach involves defining a set of functions, each responsible for parsing a specific grammar rule. These functions recursively call each other to parse nested structures.
+
+### Parsing Process
+
+The parsing process in `jsonic` can be summarized as follows:
+
+1. **Initialization:** When `Jsonic()` is called, it initializes a new parser instance with the default or user-provided options. The options control various aspects of the parsing process, including the allowed syntax, error handling, and plugin configurations.
+2. **Lexing:** The input string is passed to the lexer, which scans the string character by character. The lexer uses regular expressions and custom matching functions (as defined in the options) to identify and extract tokens. Each token is represented by an object containing its type, value, and location in the source string.
+3. **Parsing:** The parser receives the stream of tokens from the lexer. It uses a set of parsing rules, defined by the `jsonic` grammar, to construct an AST. The parser starts with a top-level rule (typically 'val') and recursively applies other rules based on the current token and the grammar.
+4. **AST Construction:** As the parser applies the rules, it builds an AST that represents the structure of the input data. The AST is a hierarchical tree structure where each node corresponds to a grammar rule or a token.
+5. **Result:** Once the entire input has been parsed, the parser returns the root node of the AST. This node represents the parsed JSON value, which can be a primitive value, an object, or an array.
+
+### Grammar Definition
+
+The grammar of `jsonic` is defined using a set of rules. Each rule specifies how a particular syntactic construct can be recognized and parsed. Rules are defined using the `jsonic.rule()` method, which takes a rule name and a rule definer function.
+
+A rule definer function takes a `RuleSpec` object and modifies it to define the rule's behavior. It primarily uses the `open` and `close` methods to specify the token sequences that mark the beginning and end of a rule, respectively.
+
+Let's illustrate this with a simplified example:
+
+```javascript
+jsonic.rule('map', (rs: RuleSpec) => {
+  rs.bo((r: Rule) => {
+    // Create a new empty map.
+    r.node = {}
+  })
+  .open([
+    // An empty map: {}.
+    { s: [OB, CB], b: 1, n: { pk: 0 }, g: 'map,json' },
+    // Start matching map key-value pairs: a:1.
+    // Reset counter n.pk as new map (for extensions).
+    { s: [OB], p: 'pair', n: { pk: 0 }, g: 'map,json,pair' },
+  ])
+  .close([
+    // End of map.
+    { s: [CB], g: 'end,json' },
+  ])
+});
+```
+
+In this example, the `map` rule is defined to match a JSON object. The `bo` method sets up the initial node for the rule as an empty object. The `open` method specifies two possible starting token sequences:
+
+1. `OB, CB`: Matches an empty object `{}`.
+2. `OB`: Matches the opening brace of a non-empty object, and pushes the `pair` rule onto the stack to parse the key-value pairs.
+
+The `close` method specifies that a closing brace `CB` marks the end of the map.
+
+### Extensibility
+
+`jsonic` is designed to be extensible, allowing users to customize the parsing process and add support for new syntax features. This extensibility is achieved through several mechanisms:
+
+1. **Options:** `jsonic` provides a wide range of options that control various aspects of the parsing process. These options can be used to modify the behavior of the lexer and parser, enabling users to fine-tune the parsing process to their specific needs.
+
+2. **Plugins:** Plugins are a powerful mechanism for extending `jsonic`. A plugin is a function that takes a `jsonic` instance as an argument and can modify its behavior by:
+
+    *   Adding new lexer matchers using `jsonic.lex()`.
+    *   Defining new parsing rules or modifying existing ones using `jsonic.rule()`.
+    *   Adding custom options to the `jsonic.options` object.
+
+3. **Custom Lexer Matchers:** Users can define custom lexer matchers to recognize new token types. These matchers are functions that take the current lexer state and return a token object if a match is found.
+
+4. **Custom Rule Actions:** Rule definitions can include custom actions that are executed when a rule matches. These actions can be used to modify the parsed data, perform validation, or trigger other custom logic.
+
+### Error Handling
+
+`jsonic` includes robust error handling capabilities. When the parser encounters an unexpected token or a syntax error, it throws a `JsonicError` exception. This exception provides detailed information about the error, including the error code, a descriptive message, and the location of the error in the source string.
+
+The error messages are customizable through the `error` option, and hints can be provided using the `hint` option.
+
+### Example: Adding Support for Comments
+
+Let's illustrate how to extend `jsonic` with a simple example. We'll add support for single-line comments starting with `//`.
+
+1. **Define a Lexer Matcher:**
+
+    ```javascript
+    function makeCommentMatcher(cfg, _opts) {
+      return function matchComment(lex) {
+        let pnt = lex.pnt
+        let src = lex.src
+        let sI = pnt.sI
+
+        if (src.substring(sI).startsWith('//')) {
+          let end = src.indexOf('\n', sI)
+          if (-1 === end) {
+            end = src.length
+          }
+          let comment = src.substring(sI, end)
+          let tkn = lex.token('#CM', comment, comment, pnt)
+          pnt.sI += comment.length
+          pnt.cI += comment.length
+          return tkn
+        }
+      }
+    }
+    ```
+
+2. **Register the Matcher:**
+
+    ```javascript
+    let j = Jsonic.make({
+      lex: {
+        match: {
+          comment: { order: 1e5, make: makeCommentMatcher },
+        },
+      },
+    })
+    ```
+
+    We add a new lexer matcher named `comment` with a high order to ensure it runs before other matchers. The `makeCommentMatcher` function creates a matcher that recognizes `//` comments and generates a `#CM` token.
+
+3. **Ignore the Comment Token:**
+
+    ```javascript
+    j.options({
+      tokenSet: {
+        IGNORE: ['#SP', '#LN', '#CM'], // Add #CM to IGNORE
+      },
+    })
+    ```
+
+    We add the `#CM` token to the `IGNORE` token set, so the parser ignores it.
+
+Now, `jsonic` will correctly parse JSON with single-line comments:
+
+```javascript
+let result = j(`
+{
+  // This is a comment
+  "a": 1,
+  "b": 2 // Another comment
+}
+`)
+
+console.log(result) // Output: { a: 1, b: 2 }
+```
+
+This example demonstrates how to extend `jsonic` with custom lexing and parsing logic to support new syntax features. By defining custom lexer matchers and modifying the parsing rules, you can tailor `jsonic` to your specific needs.
+
+### Conclusion
+
+`jsonic` is a powerful and flexible JSON parser that offers a more lenient syntax and extensive customization options. Its modular architecture, based on a configurable lexer and a rule-based parser, makes it highly extensible. By understanding how `jsonic` works, developers can leverage its capabilities to parse a wide range of JSON-like data formats and even define their own custom JSON dialects.
+
+This detailed overview provides a solid foundation for understanding the inner workings of `jsonic`. For further exploration, refer to the official documentation and the source code of the library and its plugins.
+
+## About `pythonmonkey`
+
+[`pythonmonkey`](https://github.com/Distributive-Network/PythonMonkey) is a powerful tool that embeds the SpiderMonkey JavaScript engine into the Python runtime, enabling seamless interoperability between JavaScript and Python. This article will delve into the technical details of how `pythonmonkey` achieves this integration, covering its core mechanisms and design choices.
+
+### Architecture Overview
+
+At its heart, `pythonmonkey` has two main components:
+
+1. **SpiderMonkey Integration**: The library embeds the SpiderMonkey JavaScript engine, providing the capability to execute JavaScript code within the Python process.
+2. **Python-JavaScript Bridge**: This component facilitates communication and data exchange between the two language runtimes. It handles object wrapping, type coercion, and function calls across the boundary.
+
+### SpiderMonkey Embedding
+
+`pythonmonkey` statically links to a specific version of SpiderMonkey. During the build process, the SpiderMonkey source code (obtained from mozilla-central repository) is compiled and linked with the `pythonmonkey` library. This creates a single library that contains both the Python extension and the JavaScript engine.
+
+The build process uses `CMake` as the build system, and `build.py` is the main Python script that orchestrates the build process.
+
+### Python-JavaScript Bridge
+
+The bridge is the crucial part that enables interoperability. It consists of several key mechanisms:
+
+1. **Context Creation**: When `pythonmonkey` is initialized, it creates a JSContext. This context represents an isolated instance of the SpiderMonkey engine.
+2. **Global Object**: A JavaScript global object is created within the context. This object serves as the global namespace for JavaScript code executed by `pythonmonkey`.
+3. **Object Wrapping**: `pythonmonkey` employs a system of proxy objects to enable interaction between Python and JavaScript objects:
+
+    *   **JSObjectProxy**: This Python class acts as a proxy for JavaScript objects. It overrides methods like `__getattr__`, `__setattr__`, and `__delattr__` to delegate operations to the underlying JavaScript object using the SpiderMonkey API.
+    *   **JSArrayProxy**: This is similar to `JSObjectProxy` but specifically handles JavaScript arrays, also conforming to Python's list interface.
+    *   **JSFunctionProxy**: This wraps JavaScript functions, allowing them to be called from Python.
+    *   **JSMethodProxy**: This wraps JavaScript functions that are expected to act as methods (i.e., have a 'this' context) when called from Python.
+4. **Type Coercion**: `pythonmonkey` automatically coerces data types when values cross the language boundary. It handles intrinsic types (numbers, booleans, strings, `None`, `null`, `undefined`), as well as more complex structures like lists/arrays and dictionaries/objects.
+
+    *   **From JS to Python**:
+        *   JavaScript strings are represented by Python's `JSStringProxy` type (String).
+        *   JavaScript numbers are represented by Python floats or integers (depending on the size).
+        *   JavaScript bigints are represented by `pythonmonkey.bigint` (Integer).
+        *   JavaScript booleans are represented by Python bools.
+        *   JavaScript functions are represented by `pythonmonkey.JSFunctionProxy`.
+        *   JavaScript Date objects are represented by Python `datetime.datetime` objects.
+        *   JavaScript Arrays are represented by `pythonmonkey.JSArrayProxy` (List).
+        *   JavaScript Objects are represented by `pythonmonkey.JSObjectProxy` (Dict).
+        *   JavaScript TypedArrays are represented by Python Buffer, sharing the same memory.
+        *   JavaScript Promises are awaitable.
+        *   JavaScript Error objects are represented by `pythonmonkey.SpiderMonkeyError` (Error).
+        *   JavaScript `null` and `undefined` are represented by `pythonmonkey.null` and `None` respectively.
+    *   **From Python to JS**:
+        *   Python strings are converted to JS strings, with the possibility of sharing the underlying string buffer for immutable strings.
+        *   Python integers are converted to JS numbers or bigints, depending on their size.
+        *   Python floats are converted to JS numbers.
+        *   Python booleans are converted to JS booleans.
+        *   Python lists are represented by JS true arrays and support all Array methods through a JS API Proxy.
+        *   Python dictionaries are represented by JS objects.
+        *   Python `None` is converted to JS `undefined`.
+        *   Python functions are wrapped so they can be called from JS.
+        *   Python awaitables are converted to JS Promises.
+        *   Python `Buffer` objects are converted to JS `ArrayBuffer` and share the same memory.
+        *   Python `datetime.datetime` objects are converted to JS Date objects.
+        *   Python Errors are converted to JS Error objects.
+5. **Function Calls**: When a Python function is called from JavaScript (e.g., through a callback), `pythonmonkey` creates a wrapper that:
+
+    *   Converts JS arguments to their Python equivalents.
+    *   Calls the Python function.
+    *   Converts the Python return value to a JavaScript value.
+    *   Handles Python exceptions by converting them to JavaScript errors.
+    Similarly, when a JavaScript function is called from Python, a `JSFunctionProxy` handles the call by:
+    *   Converting Python arguments to their JavaScript equivalents.
+    *   Calling the JavaScript function.
+    *   Converting the JavaScript return value to a Python object.
+    *   Handles JavaScript exceptions by converting them to Python exceptions.
+6. **Garbage Collection**: `pythonmonkey` integrates with both Python's and SpiderMonkey's garbage collectors. Proxy objects hold references to their underlying objects in the other runtime, ensuring that they are not prematurely collected.
+7. **Event Loop**: `pythonmonkey` utilizes the Python asyncio event loop to manage asynchronous operations in JavaScript. It provides APIs to schedule tasks on the event loop and to await JavaScript promises from Python.
+
+### Internal Bindings
+
+`pythonmonkey` provides a special function called `internalBinding`. This function allows JavaScript code to access certain built-in modules that are implemented in C++ for performance or to expose platform-specific functionality. These internal bindings are analogous to Node.js's internal modules.
+
+### Example: `eval`
+
+The `pythonmonkey.eval` function is a good example of how the bridge works:
+
+```python
+import pythonmonkey as pm
+
+result = pm.eval("1 + 1")
+print(result)
+```
+
+In this example:
+
+1. The Python string `"1 + 1"` is passed to the `pm.eval` function.
+2. `pm.eval` uses the SpiderMonkey API to parse and compile the JavaScript code.
+3. The compiled code is executed within the SpiderMonkey context.
+4. The result (the number 2) is returned as a JavaScript value.
+5. `pythonmonkey` automatically coerces the JavaScript number to a Python float.
+6. The Python code then prints the result.
+
+### Example: Calling Python from JS
+
+```javascript
+// In JavaScript
+const python = require('pythonmonkey').python;
+const result = python.eval('1 + 1');
+console.log(result);
+```
+
+Here:
+
+1. The JavaScript code uses the `require` function (provided by `pythonmonkey`'s CommonJS implementation) to import the `python` object.
+2. The `python.eval` function is called, which internally calls the corresponding Python function in `pythonmonkey`.
+3. The Python code evaluates the expression and returns the result.
+4. The result is automatically converted to a JavaScript number and printed to the console.
+
+### Conclusion
+
+`pythonmonkey` provides a sophisticated integration between Python and JavaScript, enabling developers to leverage the strengths of both languages within a single application. The library carefully manages object lifetimes, handles type conversions, and provides mechanisms for asynchronous operations, making it a powerful tool for building hybrid applications. Understanding its internal workings can help developers make the most of its capabilities and write efficient and robust interoperable code.
+
+
+## Notes for Maintainers
+
+### Automated Workflows
+
+The package uses GitHub Actions for automation:
+
+1. **JS Dependencies Update** (weekly + manual trigger)
+   - Updates JS dependencies and rebuilds the bundle
+   - Creates a PR for review
+   - Trigger manually: Go to Actions → "Update JS Dependencies" → "Run workflow"
+
+2. **PyPI Publishing** (on tag)
+   - Builds and publishes to PyPI when a version tag is pushed
+   - To release a new version:
+     ```bash
+     git tag v0.1.1  # Use appropriate version
+     git push origin v0.1.1
+     ```
+   - The workflow will automatically build and publish to PyPI
+
+### Required Secrets
+
+Set up these secrets in your GitHub repository:
+
+- `PYPI_API_TOKEN`: API token from PyPI for publishing
+
+### License
+
+This project is licensed under the Apache License, Version 2.0.
+
+## Versioning
+
+This project uses semantic versioning. To create a new release:
+
+1. Commit your changes
+2. Create a new git tag following semantic versioning principles:
+   ```bash
+   # For a patch release
+   git tag v0.1.1
+
+   # For a minor release
+   git tag v0.2.0
+
+   # For a major release
+   git tag v1.0.0
+   ```
+3. Push the tag to trigger the PyPI publishing workflow:
+   ```bash
+   git push origin v0.1.1
+   ```
+</file>
+
+<file path="tox.ini">
+# Tox configuration file
+# Read more under https://tox.wiki/
+# THIS SCRIPT IS SUPPOSED TO BE AN EXAMPLE. MODIFY IT ACCORDING TO YOUR NEEDS!
+
+[tox]
+minversion = 3.24
+envlist = default
+isolated_build = True
+
+
+[testenv]
+description = Invoke pytest to run automated tests
+setenv =
+    TOXINIDIR = {toxinidir}
+passenv =
+    HOME
+    SETUPTOOLS_*
+extras =
+    testing
+commands =
+    pytest {posargs}
+
+
+# # To run `tox -e lint` you need to make sure you have a
+# # `.pre-commit-config.yaml` file. See https://pre-commit.com
+# [testenv:lint]
+# description = Perform static analysis and style checks
+# skip_install = True
+# deps = pre-commit
+# passenv =
+#     HOMEPATH
+#     PROGRAMDATA
+#     SETUPTOOLS_*
+# commands =
+#     pre-commit run --all-files {posargs:--show-diff-on-failure}
+
+
+[testenv:{build,clean}]
+description =
+    build: Build the package in isolation according to PEP517, see https://github.com/pypa/build
+    clean: Remove old distribution files and temporary build artifacts (./build and ./dist)
+# https://setuptools.pypa.io/en/stable/build_meta.html#how-to-use-it
+skip_install = True
+changedir = {toxinidir}
+deps =
+    build: build[virtualenv]
+passenv =
+    SETUPTOOLS_*
+commands =
+    clean: python -c 'import shutil; [shutil.rmtree(p, True) for p in ("build", "dist", "docs/_build")]'
+    clean: python -c 'import pathlib, shutil; [shutil.rmtree(p, True) for p in pathlib.Path("src").glob("*.egg-info")]'
+    build: python -m build {posargs}
+# By default, both `sdist` and `wheel` are built. If your sdist is too big or you don't want
+# to make it available, consider running: `tox -e build -- --wheel`
+
+
+[testenv:{docs,doctests,linkcheck}]
+description =
+    docs: Invoke sphinx-build to build the docs
+    doctests: Invoke sphinx-build to run doctests
+    linkcheck: Check for broken links in the documentation
+passenv =
+    SETUPTOOLS_*
+setenv =
+    DOCSDIR = {toxinidir}/docs
+    BUILDDIR = {toxinidir}/docs/_build
+    docs: BUILD = html
+    doctests: BUILD = doctest
+    linkcheck: BUILD = linkcheck
+deps =
+    -r {toxinidir}/docs/requirements.txt
+    # ^  requirements.txt shared with Read The Docs
+commands =
+    sphinx-build --color -b {env:BUILD} -d "{env:BUILDDIR}/doctrees" "{env:DOCSDIR}" "{env:BUILDDIR}/{env:BUILD}" {posargs}
+
+
+[testenv:publish]
+description =
+    Publish the package you have been developing to a package index server.
+    By default, it uses testpypi. If you really want to publish your package
+    to be publicly accessible in PyPI, use the `-- --repository pypi` option.
+skip_install = True
+changedir = {toxinidir}
+passenv =
+    # See: https://twine.readthedocs.io/en/latest/
+    TWINE_USERNAME
+    TWINE_PASSWORD
+    TWINE_REPOSITORY
+    TWINE_REPOSITORY_URL
+deps = twine
+commands =
+    python -m twine check dist/*
+    python -m twine upload {posargs:--repository {env:TWINE_REPOSITORY:testpypi}} dist/*
+</file>
+
+<file path="VERSION.txt">
+v2.7.5
+</file>
+
+</files>

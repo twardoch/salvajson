@@ -1,14 +1,18 @@
 """Core functionality for salvaging corrupted JSON files using jsonic."""
 
+import typing  # Import typing
 from collections.abc import Callable
 from pathlib import Path
-from typing import Final
+from typing import Any, Final, cast
 
 import orjson
-from pythonmonkey import require, SpiderMonkeyError  # type: ignore
+from pythonmonkey import require  # type: ignore
+
+# Define a type alias for the complex return type of loads
+JSONSerializable = dict[str, Any] | list[Any] | int | float | str | None
 
 _SALVAJSON_DIR: Final[Path] = Path(__file__).parent.absolute()
-_salvajson_js = require(str(_SALVAJSON_DIR / "salvajson.js"))
+_salvajson_js: typing.Any = require(str(_SALVAJSON_DIR / "salvajson.js"))  # type: ignore[no-untyped-call]
 
 
 def salvaj(json_str: str) -> str:
@@ -23,7 +27,8 @@ def salvaj(json_str: str) -> str:
     Raises:
         pythonmonkey.SpiderMonkeyError: If jsonic fails to parse/fix the string.
     """
-    return _salvajson_js(json_str)
+    # Cast the result of the dynamic call, as we expect the JS to return a string.
+    return cast(str, _salvajson_js(json_str))
 
 
 def dumps(
@@ -38,7 +43,7 @@ def dumps(
     separators: tuple[str, str] | None = None,
     default: Callable | None = None,
     sort_keys: bool = False,
-    **kw,
+    **kw: typing.Any,  # Use typing.Any directly
 ) -> str:
     """Serialize Python object to JSON string using orjson.
 
@@ -66,7 +71,7 @@ def dumps(
     if indent is not None:
         options |= orjson.OPT_INDENT_2
 
-    return orjson.dumps(obj, option=options).decode("utf-8")
+    return cast(str, orjson.dumps(obj, option=options).decode("utf-8"))
 
 
 def loads(
@@ -78,8 +83,8 @@ def loads(
     parse_int: Callable | None = None,
     parse_constant: Callable | None = None,
     object_pairs_hook: Callable | None = None,
-    **kw,
-) -> dict | list | int | float | str | None:
+    **kw: typing.Any,  # Use typing.Any directly
+) -> JSONSerializable:
     """Parse JSON string into Python object, with fallback to jsonic parser.
 
     Args:
@@ -97,14 +102,11 @@ def loads(
 
     Raises:
         orjson.JSONDecodeError: If parsing fails after attempting fallback.
-        pythonmonkey.SpiderMonkeyError: If the internal jsonic parser fails during fallback.
+        pythonmonkey.SpiderMonkeyError: If the internal jsonic parser fails
+            during fallback.
     """
     try:
-        return orjson.loads(s)
+        return cast(JSONSerializable, orjson.loads(s))
     except orjson.JSONDecodeError:
-        str_input: str
-        if isinstance(s, bytes):
-            str_input = s.decode("utf-8")
-        else:
-            str_input = s
-        return orjson.loads(str(salvaj(str_input)))
+        str_input: str = s.decode("utf-8") if isinstance(s, bytes) else s
+        return cast(JSONSerializable, orjson.loads(str(salvaj(str_input))))
