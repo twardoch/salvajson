@@ -202,7 +202,7 @@ salvajson/
 
 ### Development Environment Setup
 
-To set up a development environment for SalvaJSON:
+SalvaJSON provides convenient development scripts for easy setup and management:
 
 1.  **Clone the Repository:**
     ```bash
@@ -210,33 +210,47 @@ To set up a development environment for SalvaJSON:
     cd salvajson
     ```
 
-2.  **Create and Activate a Virtual Environment** (recommended):
+2.  **Set up Development Environment:**
+    ```bash
+    ./dev.sh setup
+    ```
+    This will:
+    - Create a virtual environment
+    - Install Python dependencies
+    - Install JavaScript dependencies
+    - Set up pre-commit hooks
+
+3.  **Alternative Manual Setup:**
+    If you prefer manual setup:
     ```bash
     python -m venv .venv
     source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-    ```
-
-3.  **Install Python Dependencies:**
-    Install the package in editable mode along with development and test dependencies:
-    ```bash
     pip install -e ".[dev,test]"
-    ```
-    This also triggers the initial JavaScript build (see `build.py`).
-
-4.  **Install JavaScript Dependencies:**
-    Navigate to the `js_src` directory and install npm dependencies:
-    ```bash
-    cd js_src
-    npm ci  # Or npm install for a fresh setup
-    cd ..
-    ```
-
-5.  **Install Pre-commit Hooks:**
-    This ensures your contributions adhere to the project's coding standards and commit message format.
-    ```bash
+    cd js_src && npm ci && cd ..
     pre-commit install
-    pre-commit install --hook-type commit-msg # For commit message linting (commitlint)
+    pre-commit install --hook-type commit-msg
     ```
+
+### Development Workflow
+
+```bash
+# Run tests
+./dev.sh test
+
+# Build the project
+./dev.sh build --clean
+
+# Run linting only
+./dev.sh lint
+
+# Show coverage report
+./dev.sh coverage
+
+# Create a release (dry run)
+./dev.sh release --dry-run
+```
+
+For detailed development instructions, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ### Building the Package
 

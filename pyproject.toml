@@ -69,7 +69,10 @@ dev = [
     "python-semantic-release>=8.7.0",
     "pre-commit>=3.0.0", # Add pre-commit to dev dependencies
     "ruff>=0.4.4",
-    "mypy>=1.10.0"
+    "mypy>=1.10.0",
+    "pyinstaller>=5.0.0", # For building standalone executables
+    "bandit>=1.7.0", # Security linting
+    "safety>=2.0.0", # Vulnerability scanning
 ]
 
 [tool.pytest.ini_options]

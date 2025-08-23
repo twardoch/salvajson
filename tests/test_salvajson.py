@@ -274,3 +274,86 @@ def test_loads_compatibility_params():
         )
         == expected_data
     )
+
+
+def test_empty_input():
+    """Test handling of empty input."""
+    with pytest.raises(orjson.JSONDecodeError):
+        loads("")
+    with pytest.raises(orjson.JSONDecodeError):
+        loads(b"")
+
+
+def test_large_json_performance():
+    """Test performance with large JSON data."""
+    large_data = {f"key_{i}": f"value_{i}" for i in range(1000)}
+    json_str = dumps(large_data)
+    parsed = loads(json_str)
+    assert parsed == large_data
+
+
+def test_nested_corrupted_json():
+    """Test deeply nested corrupted JSON."""
+    nested_corrupted = """{
+        level1: {
+            level2: {
+                level3: {
+                    'value': 'deep',
+                    number: 42,
+                }
+            }
+        }
+    }"""
+    result = loads(nested_corrupted)
+    expected = {"level1": {"level2": {"level3": {"value": "deep", "number": 42}}}}
+    assert result == expected
+
+
+def test_mixed_array_types():
+    """Test arrays with mixed types."""
+    mixed_array = """[1, 'string', true, null, {key: 'value'}]"""
+    result = loads(mixed_array)
+    expected = [1, "string", True, None, {"key": "value"}]
+    assert result == expected
+
+
+def test_unicode_handling():
+    """Test Unicode character handling."""
+    unicode_json = """{'unicode': '🚀 测试 émojis'}"""
+    result = loads(unicode_json)
+    expected = {"unicode": "🚀 测试 émojis"}
+    assert result == expected
+
+
+def test_number_formats():
+    """Test various number formats."""
+    number_json = """{
+        'integer': 42,
+        'float': 3.14,
+        'scientific': 1.23e-4,
+        'negative': -123.45
+    }"""
+    result = loads(number_json)
+    expected = {
+        "integer": 42,
+        "float": 3.14,
+        "scientific": 1.23e-4,
+        "negative": -123.45
+    }
+    assert result == expected
+
+
+def test_boolean_and_null_values():
+    """Test boolean and null value handling."""
+    values_json = """{
+        'true_val': true,
+        'false_val': false,
+        'null_val': null
+    }"""
+    result = loads(values_json)
+    expected = {
+        "true_val": True,
+        "false_val": False,
+        "null_val": None
+    }
+    assert result == expected
