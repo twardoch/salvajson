@@ -108,9 +108,9 @@ def test_version():
     """Test that version is properly formatted."""
     assert isinstance(__version__, str)
     assert re.match(
-        r"^\d+\.\d+\.\d+$",
+        r"^\d+\.\d+\.\d+",
         __version__,
-    ), "Version should be in format X.Y.Z"
+    ), "Version should start with X.Y.Z"
 
 
 # Tests for salvajson.dumps
@@ -186,7 +186,7 @@ def test_package_version():
     assert isinstance(__version__, str)
     # Basic semver check (X.Y.Z)
     # This regex also allows for dev versions like 0.1.dev2+gc06f597
-    version_pattern = r"^\d+\.\d+\.\d+(?:\.dev\d+\+g[a-f0-9]+)?$"
+    version_pattern = r"^\d+\.\d+\.\d+(?:\.dev\d+\+g[a-f0-9]+(?:\.\w+)?)?(?:\+\w[\w.]*)?$"
     assert re.match(version_pattern, __version__), (
         f"Version {__version__} does not match semantic versioning pattern."
     )

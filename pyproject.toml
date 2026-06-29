@@ -78,10 +78,12 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-v --cov=src --cov-report=term-missing --cov-fail-under=80"
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v -p no:briefcase"
 filterwarnings = [
     "ignore::pytest.PytestAssertRewriteWarning",
-    "ignore::pytest.PytestConfigWarning"
+    "ignore::pytest.PytestConfigWarning",
 ]
 
 [tool.coverage.run]

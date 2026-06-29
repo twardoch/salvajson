@@ -1,0 +1,17 @@
+title: SalvaJSON
+description: Repair and parse malformed JSON — a drop-in upgrade for json.loads()
+theme: just-the-docs
+url: https://twardoch.github.io/salvajson
+repository: twardoch/salvajson
+
+aux_links:
+  "GitHub":
+    - "https://github.com/twardoch/salvajson"
+  "PyPI":
+    - "https://pypi.org/project/salvajson/"
+
+# Just the Docs settings
+color_scheme: light
+search_enabled: true
+heading_anchors: true
+permalink: pretty

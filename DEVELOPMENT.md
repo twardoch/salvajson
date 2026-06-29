@@ -1,6 +1,6 @@
 # Development Guide
 
-This document provides detailed instructions for developing, testing, and releasing salvajson.
+This document explains how to develop, test, and release salvajson.
 
 ## Quick Start
 
@@ -22,10 +22,12 @@ This document provides detailed instructions for developing, testing, and releas
 
 ### Prerequisites
 
-- Python 3.10 or higher
-- Node.js 18 or higher
-- npm
+- Python 3.10+
+- Node.js 18+
+- npm (must be the real npm, not a pnpm alias — `pythonmonkey`'s build hook uses `npm i --no-package-lock` which is npm-specific)
 - Git
+
+**Note on npm aliases:** If your system has `npm` aliased to `pnpm` (e.g. via a shell wrapper), `pythonmonkey` installation will fail with "Unknown option: 'package-lock'". Ensure `/usr/bin/env npm` resolves to the real npm binary. On macOS with Homebrew: `export PATH="/opt/homebrew/lib/node_modules/npm/bin:$PATH"` (or similar) before running `uvx hatch test` or `pip install .`.
 
 ### Installation
 
@@ -38,7 +40,7 @@ This document provides detailed instructions for developing, testing, and releas
 2. **Create a virtual environment:**
    ```bash
    python3 -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   source .venv/bin/activate  # Windows: .venv\Scripts\activate
    ```
 
 3. **Install dependencies:**
@@ -55,17 +57,15 @@ This document provides detailed instructions for developing, testing, and releas
 
 ## Development Scripts
 
-We provide several convenience scripts for common development tasks:
-
 ### Main Development Script
 
-The `dev.sh` script provides a unified interface for all development tasks:
+Use `dev.sh` for all development tasks:
 
 ```bash
 ./dev.sh <command> [options]
 ```
 
-**Available commands:**
+**Commands:**
 - `setup` - Set up development environment
 - `build` - Build the project
 - `test` - Run tests
@@ -77,7 +77,7 @@ The `dev.sh` script provides a unified interface for all development tasks:
 
 ### Individual Scripts
 
-Located in the `scripts/` directory:
+In the `scripts/` directory:
 
 - `scripts/build.sh` - Build script
 - `scripts/test.sh` - Test script
@@ -118,7 +118,7 @@ tests/
 
 ### Coverage
 
-Tests maintain >80% coverage. View coverage reports:
+Tests maintain >80% coverage. View reports:
 
 ```bash
 # Generate coverage report
@@ -148,7 +148,7 @@ Tests maintain >80% coverage. View coverage reports:
 
 ### Binary Build
 
-Build standalone executables:
+Create standalone executables:
 
 ```bash
 # Install PyInstaller
@@ -201,10 +201,10 @@ The project uses semantic versioning with git tags:
 
 ### Release Automation
 
-The release process is automated using:
+The release process uses:
 
-- **python-semantic-release** - Determines version bumps based on conventional commits
-- **GitHub Actions** - CI/CD pipeline for testing and publishing
+- **python-semantic-release** - Version bumps from conventional commits
+- **GitHub Actions** - CI/CD pipeline
 - **PyPI** - Package distribution
 
 ## Git Workflow
@@ -249,7 +249,7 @@ mypy src/
 
 ### Pre-commit Hooks
 
-Automatically run on every commit:
+Run automatically on every commit:
 
 - **Ruff** - Python linting and formatting
 - **Mypy** - Type checking
@@ -272,7 +272,7 @@ safety check
 
 ### GitHub Actions
 
-Located in `.github/workflows/`:
+In `.github/workflows/`:
 
 - **ci.yml** - Main CI/CD pipeline
 - **update-js.yml** - JS dependency updates

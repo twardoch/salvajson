@@ -1,38 +1,42 @@
 # Release Checklist
 
-This checklist ensures a smooth and complete release process for salvajson.
+This checklist ensures a smooth and complete release process for **salvajson**.
+
+---
 
 ## Pre-Release Preparation
 
 ### 1. Code Quality
 - [ ] All tests pass locally: `./dev.sh test`
-- [ ] Code coverage is ≥80%
+- [ ] Code coverage ≥80%
 - [ ] Security checks pass: `./dev.sh test --security`
 - [ ] Linting passes: `./dev.sh lint`
-- [ ] Documentation is up-to-date
+- [ ] Documentation is current
 
 ### 2. Version Management
 - [ ] Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)
-- [ ] `CHANGELOG.md` is updated (or will be auto-generated)
-- [ ] Version bump is appropriate (major/minor/patch)
+- [ ] `CHANGELOG.md` updated or will be auto-generated
+- [ ] Version bump (major/minor/patch) is correct
 
 ### 3. Dependencies
 - [ ] All dependencies are up-to-date
-- [ ] JavaScript dependencies are current: `cd js_src && npm audit`
-- [ ] Python dependencies have no known vulnerabilities: `safety check`
+- [ ] JavaScript dependencies audited: `cd js_src && npm audit`
+- [ ] Python dependencies secure: `safety check`
 
 ### 4. Testing
-- [ ] All tests pass on multiple Python versions (3.10, 3.11, 3.12)
+- [ ] Tests pass on Python 3.10, 3.11, 3.12
 - [ ] JavaScript build works: `cd js_src && npm run build`
-- [ ] CLI functionality works: `echo '{"test": "value"}' | python -m salvajson`
-- [ ] Package import works: `python -c "import salvajson; print(salvajson.__version__)"`
+- [ ] CLI functions correctly: `echo '{"test": "value"}' | python -m salvajson`
+- [ ] Package imports without error: `python -c "import salvajson; print(salvajson.__version__)"`
+
+---
 
 ## Release Process
 
 ### 1. Environment Check
 - [ ] On `main` branch: `git branch --show-current`
-- [ ] Working directory is clean: `git status`
-- [ ] Up-to-date with remote: `git pull origin main`
+- [ ] Working directory clean: `git status`
+- [ ] Local repo synced with remote: `git pull origin main`
 
 ### 2. Build and Test
 - [ ] Clean build succeeds: `./dev.sh build --clean --verify`
@@ -41,110 +45,122 @@ This checklist ensures a smooth and complete release process for salvajson.
 
 ### 3. Release Dry Run
 - [ ] Preview release: `./dev.sh release --dry-run`
-- [ ] Version bump looks correct
-- [ ] Release notes are appropriate
+- [ ] Version bump looks accurate
+- [ ] Release notes make sense
 
 ### 4. Create Release
-- [ ] Create release: `./dev.sh release`
-- [ ] Git tag is created: `git tag -l`
-- [ ] Release commit is pushed: `git log --oneline -5`
+- [ ] Run release command: `./dev.sh release`
+- [ ] Git tag created: `git tag -l`
+- [ ] Release commit pushed: `git log --oneline -5`
 
 ### 5. GitHub Actions
-- [ ] CI/CD pipeline starts: Check GitHub Actions
+- [ ] CI/CD pipeline triggered (check GitHub Actions)
 - [ ] All jobs pass (prepare, test, security, build-binaries)
-- [ ] PyPI publication succeeds
-- [ ] GitHub release is created with assets
+- [ ] PyPI publication successful
+- [ ] GitHub release created with assets
+
+---
 
 ## Post-Release Verification
 
 ### 1. Package Availability
-- [ ] Package is available on PyPI: `pip install salvajson==<version>`
-- [ ] GitHub release has all assets (wheel, tar.gz, binaries)
-- [ ] Release notes are accurate
+- [ ] Installable from PyPI: `pip install salvajson==<version>`
+- [ ] GitHub release includes all assets (wheel, tar.gz, binaries)
+- [ ] Release notes match changes
 
 ### 2. Installation Testing
-- [ ] Install from PyPI in fresh environment: `pip install salvajson`
-- [ ] Basic functionality works: `python -c "import salvajson; print(salvajson.__version__)"`
-- [ ] CLI works: `python -m salvajson --help`
+- [ ] Install in fresh environment: `pip install salvajson`
+- [ ] Import works: `python -c "import salvajson; print(salvajson.__version__)"`
+- [ ] CLI responds: `python -m salvajson --help`
 
 ### 3. Binary Testing
-- [ ] Download Linux binary from GitHub release
-- [ ] Download Windows binary from GitHub release
-- [ ] Download macOS binary from GitHub release
-- [ ] Test basic functionality: `./salvajson-linux-x64 input.json`
+- [ ] Download Linux binary from GitHub
+- [ ] Download Windows binary from GitHub
+- [ ] Download macOS binary from GitHub
+- [ ] Basic functionality test: `./salvajson-linux-x64 input.json`
 
 ### 4. Documentation
-- [ ] README.md reflects current version
-- [ ] CHANGELOG.md is updated
-- [ ] GitHub release notes are comprehensive
-- [ ] PyPI page shows correct information
+- [ ] README.md shows correct version
+- [ ] CHANGELOG.md is current
+- [ ] GitHub release notes are complete
+- [ ] PyPI page has correct metadata
+
+---
 
 ## Rollback Procedure
 
-If issues are discovered after release:
+If issues appear after release:
 
 ### 1. Immediate Actions
-- [ ] Identify the issue and scope
-- [ ] Communicate to users (GitHub issue/discussion)
-- [ ] Consider if hotfix is needed
+- [ ] Identify and scope the issue
+- [ ] Notify users (GitHub issue or discussion)
+- [ ] Decide if a hotfix is necessary
 
 ### 2. Hotfix Process
 - [ ] Create hotfix branch: `git checkout -b hotfix/v<version>`
 - [ ] Apply minimal fix
-- [ ] Test thoroughly
-- [ ] Create hotfix release: `./dev.sh release --patch`
+- [ ] Run full tests
+- [ ] Release hotfix: `./dev.sh release --patch`
 
-### 3. Yanking (if necessary)
-- [ ] Yank problematic version from PyPI: `pip install twine && twine upload --yank <version>`
-- [ ] Update GitHub release to mark as pre-release
-- [ ] Communicate the issue and resolution
+### 3. Yanking (if needed)
+- [ ] Yank version from PyPI: `twine upload --yank <version>`
+- [ ] Mark GitHub release as pre-release
+- [ ] Announce resolution
+
+---
 
 ## Automation Status
 
-### Currently Automated
-- ✅ Version determination (semantic-release)
-- ✅ Changelog generation (semantic-release)
-- ✅ Git tagging (semantic-release)
-- ✅ Multi-platform testing (GitHub Actions)
-- ✅ Security scanning (GitHub Actions)
-- ✅ Binary builds (GitHub Actions)
-- ✅ PyPI publishing (GitHub Actions)
-- ✅ GitHub release creation (GitHub Actions)
+### Automated
+- ✅ Version determination (via semantic-release)
+- ✅ Changelog generation
+- ✅ Git tagging
+- ✅ Multi-platform testing
+- ✅ Security scanning
+- ✅ Binary builds
+- ✅ PyPI publishing
+- ✅ GitHub release creation
 
-### Manual Steps
+### Manual
 - 🔄 Release initiation (`./dev.sh release`)
-- 🔄 Pre-release testing and verification
-- 🔄 Post-release verification
-- 🔄 Issue response and hotfixes
+- 🔄 Pre-release verification
+- 🔄 Post-release checks
+- 🔄 Handling post-release issues
+
+---
 
 ## Version History
 
-Track major releases and their characteristics:
-
-| Version | Date | Type | Notes |
-|---------|------|------|-------|
+| Version | Date | Type  | Notes                  |
+|---------|------|-------|------------------------|
 | v1.0.0  | TBD  | Major | Initial stable release |
+
+---
 
 ## Emergency Contacts
 
-- **Primary Maintainer**: Adam Twardoch (@twardoch)
-- **Backup**: [Add backup maintainer]
-- **PyPI Admin**: [Add PyPI admin contact]
+- **Primary Maintainer**: Adam Twardoch (@twardoch)  
+- **Backup**: [Add backup maintainer]  
+- **PyPI Admin**: [Add PyPI admin contact]  
+
+---
 
 ## Release Schedule
 
-- **Regular releases**: As needed based on feature completion
-- **Security releases**: ASAP for critical vulnerabilities
-- **Maintenance releases**: Monthly for dependency updates
+- **Regular releases**: On demand  
+- **Security releases**: ASAP  
+- **Maintenance releases**: Monthly  
+
+---
 
 ## Metrics to Track
 
-After each release, track:
-- [ ] Download numbers (PyPI, GitHub)
-- [ ] Issue reports
-- [ ] Performance metrics
+After each release:
+- [ ] Download stats (PyPI, GitHub)
+- [ ] New issues reported
+- [ ] Performance data
 - [ ] User feedback
 
 ---
 
-**Note**: This checklist should be updated as the release process evolves. Keep it current with any changes to automation or procedures.
+**Note**: Update this checklist as release workflows change. Keep it aligned with automation and team practices.
