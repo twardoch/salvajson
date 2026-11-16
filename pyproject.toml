@@ -234,3 +234,6 @@ upload_to_repository = false # for other repositories like GitHub Packages
 # The setting `version_variable` tells PSR where to write the new version.
 # If hatch-vcs updates `_version.py` at build time based on the tag, then PSR writing
 # to `_version.py` before tagging is the standard flow.
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/salvajson/__version__.py"

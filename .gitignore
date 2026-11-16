@@ -188,3 +188,4 @@ web_modules/
 wheels/
 yarn-debug.log*
 yarn-error.log*
+src/salvajson/__version__.py
