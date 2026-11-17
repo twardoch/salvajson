@@ -186,7 +186,9 @@ def test_package_version():
     assert isinstance(__version__, str)
     # Basic semver check (X.Y.Z)
     # This regex also allows for dev versions like 0.1.dev2+gc06f597
-    version_pattern = r"^\d+\.\d+\.\d+(?:\.dev\d+\+g[a-f0-9]+(?:\.\w+)?)?(?:\+\w[\w.]*)?$"
+    version_pattern = (
+        r"^\d+\.\d+\.\d+(?:\.dev\d+\+g[a-f0-9]+(?:\.\w+)?)?(?:\+\w[\w.]*)?$"
+    )
     assert re.match(version_pattern, __version__), (
         f"Version {__version__} does not match semantic versioning pattern."
     )
@@ -197,13 +199,14 @@ def test_package_version():
     # It's more of an integration check for the build/install process.
     try:
         import importlib.metadata
+
         installed_version = importlib.metadata.version("salvajson")
         assert __version__ == installed_version
     except importlib.metadata.PackageNotFoundError:
         # This is acceptable if running tests directly from source without installation
         # or if `_version.py` fallback is active.
         # In a CI environment after install, this should ideally not be hit.
-        pass # Or print a warning: warnings.warn("salvajson not installed, skipping metadata version check")
+        pass  # Or print a warning: warnings.warn("salvajson not installed, skipping metadata version check")
 
 
 # Tests for salvajson.loads
@@ -338,7 +341,7 @@ def test_number_formats():
         "integer": 42,
         "float": 3.14,
         "scientific": 1.23e-4,
-        "negative": -123.45
+        "negative": -123.45,
     }
     assert result == expected
 
@@ -351,9 +354,5 @@ def test_boolean_and_null_values():
         'null_val': null
     }"""
     result = loads(values_json)
-    expected = {
-        "true_val": True,
-        "false_val": False,
-        "null_val": None
-    }
+    expected = {"true_val": True, "false_val": False, "null_val": None}
     assert result == expected

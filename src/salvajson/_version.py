@@ -1,4 +1,5 @@
 """Version information."""
+
 import importlib.metadata
 
 try:

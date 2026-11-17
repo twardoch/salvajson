@@ -59,7 +59,7 @@ salvaj('{name: "Alice", age: 30,}')
 salvaj('["a" "b" "c"]')
 # → '["a","b","c"]'
 
-salvaj('/* config */ {debug: true, host: localhost}')
+salvaj("/* config */ {debug: true, host: localhost}")
 # → '{"debug":true,"host":"localhost"}'
 ```
 

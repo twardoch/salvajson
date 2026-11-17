@@ -35,8 +35,8 @@ salvaj('{name: "Alice", age: 30,}')
 # → '{"name":"Alice","age":30}'
 
 # Parse JSON → Python object (auto-repairs on failure)
-loads('{"id": 1}')                       # fast path via orjson
-loads("{id: 1, tags: ['a', 'b'],}")      # repair path via jsonic
+loads('{"id": 1}')  # fast path via orjson
+loads("{id: 1, tags: ['a', 'b'],}")  # repair path via jsonic
 # → {'id': 1, 'tags': ['a', 'b']}
 
 # Serialize Python → JSON string (via orjson, fast)
